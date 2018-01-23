@@ -15,9 +15,9 @@ def list_dir(dir_, ext, return_name=False):
         criteria = lambda x: x[-len(ext):].lower() == ext
         strip_ext = lambda x: get_name(x, ext=False)
     files = (f for f in os.listdir(dir_) if criteria(f))
-    files = sorted(strip_ext(file) for file in files)
-    if return_name: return [(file, os.path.join(dir_, file + ext)) for file in files]
-    else: return files
+    files = sorted((strip_ext(file), os.path.join(dir_, file)) for file in files)
+    if return_name: return files
+    else: return [path for file, path in files]
 
 def load_pickle(path):
     with open(path, 'rb') as f:
