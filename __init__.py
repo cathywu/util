@@ -1,5 +1,5 @@
 import numpy as np
-import subprocess, os, re, time, zipfile, gzip, io, shutil, string, random, itertools
+import subprocess, os, re, time, zipfile, gzip, io, shutil, string, random, itertools, pickle
 
 def get_name(path, ext=True):
     name = os.path.basename(path)
