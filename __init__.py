@@ -63,7 +63,7 @@ def get_temp_file(ext, N=10):
 def get_temp_dir(N=10):
     return get_temp_file('/', N)
 
-def shell(cmd, wait=True, ignore_error=False):
+def shell(cmd, wait=True, ignore_error=True):
     if type(cmd) != str:
         cmd = ' '.join(cmd)
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
