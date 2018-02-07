@@ -46,7 +46,7 @@ def wget(link, output_directory):
     output_path = os.path.join(os.path.basename(link))
     if not os.path.exists(output_path): raise RuntimeError('Failed to run %s' % cmd)
     return output_path
-        
+
 def extract(input_path, output_path=None):
     if input_path[-3:] == '.gz':
         if not output_path:
@@ -63,7 +63,7 @@ def get_temp_file(ext, N=10):
 def get_temp_dir(N=10):
     return get_temp_file('/', N)
 
-def shell(cmd, wait=True, ignore_error=True):
+def shell(cmd, wait=True, ignore_error=2):
     if type(cmd) != str:
         cmd = ' '.join(cmd)
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -71,8 +71,11 @@ def shell(cmd, wait=True, ignore_error=True):
         return process
     out, err = process.communicate()
     if err:
-        print(err.decode())
-        if not ignore_error:
+        if ignore_error == 2:
+            pass
+        elif ignore_error:
+            print(err.decode())
+        else:
             raise RuntimeError('Error in command line call')
     return out.decode()
 
