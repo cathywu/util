@@ -76,6 +76,7 @@ def shell(cmd, wait=True, ignore_error=2):
         elif ignore_error:
             print(err.decode())
         else:
+            print(err.decode())
             raise RuntimeError('Error in command line call')
     return out.decode()
 
