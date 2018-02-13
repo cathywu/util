@@ -1,5 +1,5 @@
 import numpy as np
-import subprocess, os, re, time, zipfile, gzip, io, shutil, string, random, itertools, pickle
+import subprocess, os, re, time, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, codecs
 
 def get_name(path, ext=True):
     name = os.path.basename(path)
@@ -19,6 +19,14 @@ def list_dir(dir_, ext, return_name=False):
     if return_name: return files
     else: return [path for file, path in files]
 
+def load_json(path):
+    with open(path, 'rb') as f:
+        return json.load(f)
+
+def save_json(dict_, path):
+    with open(path, 'wb') as f:
+        json.dump(dict_, codecs.getwriter('utf-8')(f))
+    
 def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
