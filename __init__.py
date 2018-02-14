@@ -25,7 +25,7 @@ def load_json(path):
 
 def save_json(dict_, path):
     with open(path, 'wb') as f:
-        json.dump(dict_, codecs.getwriter('utf-8')(f))
+        json.dump(dict_, codecs.getwriter('utf-8')(f), indent=4, sort_keys=True)
     
 def load_pickle(path):
     with open(path, 'rb') as f:
