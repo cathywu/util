@@ -26,7 +26,15 @@ def load_json(path):
 def save_json(dict_, path):
     with open(path, 'wb') as f:
         json.dump(dict_, codecs.getwriter('utf-8')(f), indent=4, sort_keys=True)
-    
+
+def load_text(path):
+    with open(path, 'r+') as f:
+        return f.read()
+        
+def save_text(string, path):
+    with open(path, 'w+') as f:
+        f.write(string)
+        
 def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
@@ -102,3 +110,8 @@ def parallel_execution(process_fn, n_jobs, error_msg=''):
     if error:
         raise RuntimeError(error_msg)
     return outputs
+
+def attributes(obj):
+    import inspect, pprint
+    pprint.pprint(inspect.getmembers(obj, lambda a: not inspect.isroutine(a)))
+     
