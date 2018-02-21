@@ -73,8 +73,9 @@ def extract(input_path, output_path=None):
     else:
         raise RuntimeError('Don\'t know file extension for ' + input_path)
 
-def get_temp_file(ext, N=10):
-    return '/tmp/zxyan_temp' + ''.join(random.sample(string.digits, k=N)) + ext
+def get_temp_file(ext, N=10, parent_dir=None):
+    if parent_dir is None: parent_dir = '/tmp/zxyan_temp'
+    return parent_dir + ''.join(random.sample(string.digits, k=N)) + ext
 
 def get_temp_dir(N=10):
     return get_temp_file('/', N)
