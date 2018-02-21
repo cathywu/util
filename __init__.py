@@ -13,7 +13,7 @@ def list_dir(dir_, ext, return_name=False):
     else:
         if ext[0] != '.': ext = '.' + ext.lower()
         criteria = lambda x: x[-len(ext):].lower() == ext
-        strip_ext = lambda x: get_name(x, ext=False)
+        strip_ext = lambda x: x[:-len(ext)]
     files = (f for f in os.listdir(dir_) if criteria(f))
     files = sorted((strip_ext(file), os.path.join(dir_, file)) for file in files)
     if return_name: return files
