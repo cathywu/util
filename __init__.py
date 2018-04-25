@@ -10,12 +10,14 @@ def list_dir(dir_, ext, return_name=False):
     if ext == '/':
         criteria = lambda x: os.path.isdir(os.path.join(dir_, x))
         strip_ext = lambda x: x
+        post_process = lambda x: x + '/'
     else:
         if ext[0] != '.': ext = '.' + ext.lower()
         criteria = lambda x: x[-len(ext):].lower() == ext
-        strip_ext = lambda x: x[:-len(ext)]
+        strip_ext = lambda x: get_name(x, ext=False)
+        post_process = lambda x: x
     files = (f for f in os.listdir(dir_) if criteria(f))
-    files = sorted((strip_ext(file), os.path.join(dir_, file)) for file in files)
+    files = sorted((strip_ext(file), post_process(os.path.join(dir_, file))) for file in files)
     if return_name: return files
     else: return [path for file, path in files]
 
@@ -30,11 +32,11 @@ def save_json(dict_, path):
 def load_text(path):
     with open(path, 'r+') as f:
         return f.read()
-        
+
 def save_text(string, path):
     with open(path, 'w+') as f:
         f.write(string)
-        
+
 def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
@@ -115,4 +117,4 @@ def parallel_execution(process_fn, n_jobs, error_msg=''):
 def attributes(obj):
     import inspect, pprint
     pprint.pprint(inspect.getmembers(obj, lambda a: not inspect.isroutine(a)))
-     
+
