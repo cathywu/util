@@ -1,6 +1,8 @@
 import subprocess, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json
 from time import time
 from glob import glob
+import pdb
+d = d_ = pdb.set_trace
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
@@ -78,7 +80,6 @@ class Path(str):
             cwd = cwd._up
         else:
             return None
-        print(proj_path)
         project = import_module('project', str(proj_path))
         return project.project
     

@@ -2,7 +2,9 @@ import numpy as np
 import torch
 
 def to_torch(x, device='cuda'):
-    if type(x) == dict:
+    if x is None:
+        return None
+    elif type(x) == dict:
         return { k: to_torch(v) for k, v in x.items() }
     elif type(x) in [list, tuple]:
         return [to_torch(v) for v in x]
