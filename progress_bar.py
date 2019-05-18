@@ -22,6 +22,12 @@ class Progress(object):
         if len(active_counters) == 0:
             progress_manager.stop()
 
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.close()
+
 class RangeProgress(Progress):
     def __init__(self, start, end, step=1, desc='', leave=False):
         self.i = start

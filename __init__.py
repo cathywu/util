@@ -4,9 +4,11 @@ import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, ran
 from datetime import datetime
 from time import time
 from glob import glob
+from tqdm import tqdm
 from collections import OrderedDict, defaultdict, Counter
 import pdb
 d = d_ = pdb.set_trace
+import q
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -193,16 +195,31 @@ class Path(str):
             return ''
         return frags[1]
 
+    extract = extract
     load_json = load_json
     save_json = save_json
-    load_text = load_text
-    save_text = save_text
-    load_pickle = load_pickle
-    save_pickle = save_pickle
-    extract = extract
+    load_txt = load_text
+    save_txt = save_text
+    load_p = load_pickle
+    save_p = save_pickle
+
+    def load_csv(self, index_col=0, **kwargs):
+        return pd.read_csv(self, index_col=index_col, **kwargs)
+
+    def save_csv(self, df, float_format='%.5g', **kwargs):
+        df.to_csv(self, float_format=float_format, **kwargs)
+
+    def load_npy(self):
+        return np.load(self)
+    
+    def save_npy(self, obj):
+        np.save(self, obj)
     
     def load(self):
         return eval('self.load_%s' % self._ext)()
+    
+    def save(self, obj):
+        return eval('self.save_%s' % self._ext)(obj)
 
 class Namespace(object):
     def __init__(self, **kwargs):
@@ -336,7 +353,7 @@ def get_gpu_info():
     gpu_df['utilization'] = 1 - gpu_df['utilization.gpu [%]'] / 100
     return gpu_df
 
-def get_gpu_process_info(pid=None):
+def get_process_gpu_info(pid=None):
     nvidia_str, _ = shell('nvidia-smi --query-compute-apps=pid,gpu_name,used_gpu_memory --format=csv,nounits')
     nvidia_str_io = StringIO(nvidia_str.replace(', ', ','))
 
@@ -372,9 +389,20 @@ try:
                 return np.asscalar(x)
             return x
         return recurse(t, helper)
+    
+    def count_params(network, requires_grad=False):
+        return sum(p.numel() for p in network.parameters() if not requires_grad or p.requires_grad)
 
     class Flatten(nn.Module):
         def forward(self, input):
             return input.view(input.size(0), -1)
+except ImportError:
+    pass
+
+try:
+    import visdom
+
+    def get_visdom(env='main', server=None, port=None):
+        return visdom.Visdom(server=server or os.environ['VISDOM_SERVER'], port=port or os.environ['VISDOM_PORT'], env=env)
 except ImportError:
     pass
