@@ -101,6 +101,7 @@ class NewPath(Path):
 
 Path = NewPath
 
+from sklearn import metrics
 def get_reg_correlations(y_true, y_pred):
     correlations = pd.DataFrame(np.nan, index=Reg_correlators, columns=['value', 'pvalue'])
     correlations.index.name = 'correlator'
