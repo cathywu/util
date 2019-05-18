@@ -221,6 +221,12 @@ class Path(str):
     def save(self, obj):
         return eval('self.save_%s' % self._ext)(obj)
 
+    def wget(self, link):
+        if self.isdir():
+            return Path(wget(link, self))
+        raise ValueError('Path %s needs to be a directory' % self)
+        
+
 class Namespace(object):
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)

@@ -50,6 +50,10 @@ def append_bed_summary_column(df, column):
     df[column] = df.apply(lambda row: '%s:%s-%s' % (row['chr'], row['start'], row['end']), axis=1)
     return df
 
+def convert_columns_to_numeric(df, columns):
+    df[columns] = df[columns].apply(pd.to_numeric)
+    return df
+
 class NewPath(Path):
     def load_fasta(self, has_name=False):
         data = []
