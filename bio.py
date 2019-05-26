@@ -102,20 +102,24 @@ class NewPath(Path):
 Path = NewPath
 
 from sklearn import metrics
-def get_reg_correlations(y_true, y_pred):
-    correlations = pd.DataFrame(np.nan, index=Reg_correlators, columns=['value', 'pvalue'])
+def get_reg_correlations(y_true, y_pred, extended=False):
+    correlators = (sp.stats.spearmanr, sp.stats.pearsonr, sp.stats.kendalltau)
+    labels = ('Spearman', 'Pearson', 'KendalTau')
+
+    correlations = pd.DataFrame(np.nan, index=labels, columns=['value', 'pvalue'])
     correlations.index.name = 'correlator'
     correlations.columns.name = 'category'
     if len(y_true) == len(y_pred) == 0:
         return correlations
-    regression_correlators = ((sp.stats.spearmanr, 'Spearman'), (sp.stats.pearsonr, 'Pearson'), (sp.stats.kendalltau, 'KendalTau'))
+    for correlator, label in zip(correlators, labels):
+        correlations.loc[label] = correlator(y_true, y_pred)
+    if not extended:
+        return correlations
     top_25_cutoff = np.percentile(y_true, 75)
     top_25_indices = y_true > top_25_cutoff
-    for correlator, label in regression_correlators:
-        correlations.loc[label] = correlator(y_true, y_pred)
     y_true_top_25 = y_true[top_25_indices]
     y_pred_top_25 = y_pred[top_25_indices]
-    for correlator, label in regression_correlators:
+    for correlator, label in zip(correlators, labels):
         correlation = 0
         if len(y_true_top_25) > 0:
             correlations.loc[label + '_top_25'] = correlator(y_true_top_25, y_pred_top_25)
@@ -125,7 +129,7 @@ def get_reg_correlations(y_true, y_pred):
     return correlations
 
 def get_cls_correlations(y_true, y_pred, return_p_value=False):
-    correlations = pd.DataFrame(np.nan, index=Cls_correlators, columns=['value'])
+    correlations = pd.DataFrame(np.nan, index=['AUROC', 'AUPRC'], columns=['value'])
     correlations.index.name = 'correlator'
     correlations.columns.name = 'category'
     if len(y_true) == len(y_pred) == 0:

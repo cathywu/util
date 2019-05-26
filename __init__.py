@@ -17,6 +17,26 @@ if sys.version_info[0] < 3:
 else:
     from io import StringIO
 
+class Dict(dict):
+    def merge(self, *dicts):
+        for d in dicts[1:]:
+            self.update(d)
+        return self
+    
+    def filter(self, keys):
+        try: # check for iterable
+            keys = set(keys)
+            return Dict((k, v) for k, v in self.items() if k in keys)
+        except TypeError: # function key
+            f = keys
+            return Dict((k, v) for k, v in self.items() if f(k, v))
+    
+    def map(self, mapper):
+        if callable(mapper): # function mapper
+            return Dict((k, mapper(v)) for k, v in self.items())
+        else: # dictionary mapper
+            return Dict((k, mapper[v]) for k, v in self.items())
+
 def load_json(path):
     with open(path, 'r+') as f:
         return json.load(f)
@@ -60,6 +80,54 @@ def extract(input_path, output_path=None):
                 f_out.write(f_in.read())
     else:
         raise RuntimeError('Don\'t know file extension for ' + input_path)
+
+def tmux_window(cmd, session='', window='', directory=None):
+    def flag(cmds, flag, value):
+        if value:
+            cmds.extend([flag, value])
+        return cmds
+
+    cmds = []
+    # if window exists, skip everything
+    if window:
+        cmds.extend(['tmux', 'list-panes', '-t', '%s:%s' % (session, window)])
+        cmds.append('||')
+    
+    # else if session exists
+    subcmds = ['tmux', 'has-session']
+    flag(subcmds, '-t', session)
+    subcmds.append('&&')
+
+    # then call new-window
+    subcmds.extend(['tmux', 'new-window', '-d'])
+    flag(subcmds, '-t', session)
+    flag(subcmds, '-n', window)
+    flag(subcmds, '-c', directory)
+    subcmds.append("'%s'" % cmd)
+    
+    cmds.append('(%s)' % ' '.join(subcmds))
+    cmds.append('||')
+
+    # else new-session
+    cmds.extend(['tmux', 'new-session', '-d'])
+    flag(cmds, '-s', session)
+    flag(cmds, '-n', window)
+    flag(cmds, '-c', directory)
+
+    cmds.append("'%s'" % cmd)
+    return ' '.join(cmds)
+
+def ssh(user, host, cmd, key=None, password=None, terminal=False):
+    cmds = ['ssh']
+    if key is not None:
+        cmds.extend(['-i', key])
+    if password is not None:
+        cmds = ['sshpass', '-p', password] + cmds
+    if terminal:
+        cmds.append('-t')
+    cmds.append('%s@%s' % (user, host))
+    cmds.append('"%s"' % cmd)
+    return ' '.join(cmds)
 
 def shell(cmd, wait=True, ignore_error=2):
     if type(cmd) != str:
@@ -343,8 +411,8 @@ def reindex(df, order=None, rename=None, level=[], axis=0, squeeze=True):
         new_df.columns = renamed_index
     return new_df
 
-def get_gpu_info():
-    nvidia_str, _ = shell('nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,nounits')
+def get_gpu_info(ssh_fn=lambda x: x):
+    nvidia_str, _ = shell(ssh_fn('nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,nounits'))
     nvidia_str = nvidia_str.replace('[Not Supported]', '100').replace(', ', ',')
     nvidia_str_io = StringIO(nvidia_str)
 
@@ -355,12 +423,15 @@ def get_gpu_info():
         gpu_df = gpu_df.loc[devices]
         gpu_df.index = gpu_df.index.map({k: i for i, k in enumerate(devices)})
     
-    gpu_df['memory'] = gpu_df['memory.total [MiB]'] - gpu_df['memory.used [MiB]']
-    gpu_df['utilization'] = 1 - gpu_df['utilization.gpu [%]'] / 100
+    gpu_df['memory_total'] = gpu_df['memory.total [MiB]']
+    gpu_df['memory_used'] = gpu_df['memory.used [MiB]']
+    gpu_df['memory_free'] = gpu_df['memory_total'] - gpu_df['memory_used']
+    gpu_df['utilization'] = gpu_df['utilization.gpu [%]'] / 100
+    gpu_df['utilization_free'] = 1 - gpu_df['utilization']
     return gpu_df
 
-def get_process_gpu_info(pid=None):
-    nvidia_str, _ = shell('nvidia-smi --query-compute-apps=pid,gpu_name,used_gpu_memory --format=csv,nounits')
+def get_process_gpu_info(pid=None, ssh_fn=lambda x: x):
+    nvidia_str, _ = shell(ssh_fn('nvidia-smi --query-compute-apps=pid,gpu_name,used_gpu_memory --format=csv,nounits'))
     nvidia_str_io = StringIO(nvidia_str.replace(', ', ','))
 
     gpu_df = pd.read_csv(nvidia_str_io, index_col=0)
@@ -375,7 +446,10 @@ def get_process_gpu_info(pid=None):
 
 try:
     import torch
-    import torch.nn as nn
+    import torch.nn as nn    
+    import torch.nn.functional as F
+    import torch.optim as optim
+    from torch.utils.data import Dataset, DataLoader
 
     def to_torch(x, device='cuda'):
         def helper(x):
@@ -399,9 +473,73 @@ try:
     def count_params(network, requires_grad=False):
         return sum(p.numel() for p in network.parameters() if not requires_grad or p.requires_grad)
 
+    def gelu(x):
+        return 0.5 * x * (1 + torch.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
+
+    class GeLU(nn.Module):
+        def forward(self, input):
+            return gelu(input)
+
     class Flatten(nn.Module):
         def forward(self, input):
             return input.view(input.size(0), -1)
+
+    class Reshape(nn.Module):
+        def forward(self, input, *shape):
+            return input.reshape(*shape)
+    
+    class Transpose(nn.Module):
+        def forward(self, input, dim0, dim1):
+            return input.transpose(dim0, dim1)
+    
+    class Attention(nn.Module):
+        def __init__(self, n_io, n_kv, n_head=1, layer_norm=False):
+            super(Attention, self).__init__()
+            self.n_kv = n_kv
+            self.n_head = n_head
+            self.layer_norm = layer_norm
+            if layer_norm:
+                self.ln = nn.LayerNorm(n_io)
+            self.fc_qkv = nn.Linear(n_io, n_head * n_kv * 3)
+            self.fc_out = nn.Linear(n_head * n_kv, n_io)
+
+        def merge_past(self, k, v, past_kv, qk_ignore):
+            past_k, past_v = past_kv
+            n_ctx, _ = qk_ignore.shape
+            past_ignore = torch.zeros((n_ctx, past_k.size(2)))
+            return (
+                torch.cat((past_k, k), dim=2),
+                torch.cat((past_v, v), dim=2),
+                torch.cat((past_ignore, qk_ignore), dim=1)
+            )
+        
+        def attend(self, qk, qk_ignore):
+            qk.data.masked_fill_(qk_ignore, -np.inf)
+            attn_weights = qk.softmax(dim=-1)
+            return attn_weights
+        
+        def forward(self, input, past_kv=None):
+            n_b, n_ctx, n_io = input.shape
+            n_head = self.n_head
+            n_kv = self.n_kv
+            if self.layer_norm:
+                input = self.ln(input)
+
+            r_fn = lambda x: x.reshape(n_b, n_ctx, n_head, n_kv).transpose(1, 2)
+            q, k, v = map(r_fn, self.fc_qkv(input).split(n_head * n_kv, dim=-1))
+            qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
+
+            # each is shape (n_b, n_head, n_ctx, n_kv)
+            if past_kv is not None:
+                k, v, qk_ignore = self.merge_past(k, v, past_kv, qk_ignore)
+            qk = torch.einsum('bhck,bhdk->bhcd', q, k) / np.sqrt(n_kv)
+            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
+            attn_weights = self.attend(qk, qk_ignore)
+            qkv = torch.einsum('bhcd,bhdk->bchk', attn_weights, v)
+
+            out = self.fc_out(qkv.reshape(n_b, n_ctx, n_head * n_kv))
+            return out, (k, v)
+
 except ImportError:
     pass
 
@@ -410,5 +548,10 @@ try:
 
     def get_visdom(env='main', server=None, port=None):
         return visdom.Visdom(server=server or os.environ['VISDOM_SERVER'], port=port or os.environ['VISDOM_PORT'], env=env)
+except ImportError:
+    pass
+
+try:
+    from e.src.config import Config
 except ImportError:
     pass
