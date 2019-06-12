@@ -1,14 +1,13 @@
 from __future__ import absolute_import, print_function
 
-import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json
+import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, gc
 from datetime import datetime
 from time import time
 from glob import glob
 from tqdm import tqdm
 from collections import OrderedDict, defaultdict, Counter
-import pdb
-d = d_ = pdb.set_trace
 import q
+qq = q
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -17,9 +16,12 @@ if sys.version_info[0] < 3:
 else:
     from io import StringIO
 
+def lrange(*args, **kwargs):
+    return list(range(*args, **kwargs))
+
 class Dict(dict):
     def merge(self, *dicts):
-        for d in dicts[1:]:
+        for d in dicts:
             self.update(d)
         return self
     
@@ -146,6 +148,21 @@ def import_module(module_name, module_path):
     import imp
     module = imp.load_source(module_name, module_path)
     return module
+
+def shorten(names, sep='_', new_sep='_'):
+    names = [n.split(sep) for n in names]
+    levels = [*itertools.zip_longest(*names, fillvalue='')]
+    def rename(level):
+        uniq = np.unique(level)
+        keep_len = 1
+        while True:
+            new_uniq = np.unique([u[:keep_len] for u in uniq])
+            if len(new_uniq) == len(uniq):
+                mapping = dict(zip(uniq, new_uniq))
+                return [mapping[x] for x in level]
+            keep_len += 1
+    new_levels = [*map(rename, levels)]
+    return [new_sep.join(tup).rstrip(new_sep) for tup in zip(*new_levels)]
 
 class Path(str):
     @classmethod
@@ -334,6 +351,13 @@ try:
         import matplotlib
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+
+        
+    def _sel(self, col, value):
+        if type(value) == list:
+            return self[self[col].isin(value)]
+        return self[self[col] == value]
+    pd.DataFrame.sel = _sel
 except ImportError:
     pass
 try:
@@ -423,12 +447,13 @@ def get_gpu_info(ssh_fn=lambda x: x):
         gpu_df = gpu_df.loc[devices]
         gpu_df.index = gpu_df.index.map({k: i for i, k in enumerate(devices)})
     
-    gpu_df['memory_total'] = gpu_df['memory.total [MiB]']
-    gpu_df['memory_used'] = gpu_df['memory.used [MiB]']
-    gpu_df['memory_free'] = gpu_df['memory_total'] - gpu_df['memory_used']
-    gpu_df['utilization'] = gpu_df['utilization.gpu [%]'] / 100
-    gpu_df['utilization_free'] = 1 - gpu_df['utilization']
-    return gpu_df
+    out_df = pd.DataFrame(index=gpu_df.index)
+    out_df['memory_total'] = gpu_df['memory.total [MiB]']
+    out_df['memory_used'] = gpu_df['memory.used [MiB]']
+    out_df['memory_free'] = out_df['memory_total'] - out_df['memory_used']
+    out_df['utilization'] = gpu_df['utilization.gpu [%]'] / 100
+    out_df['utilization_free'] = 1 - out_df['utilization']
+    return out_df
 
 def get_process_gpu_info(pid=None, ssh_fn=lambda x: x):
     nvidia_str, _ = shell(ssh_fn('nvidia-smi --query-compute-apps=pid,gpu_name,used_gpu_memory --format=csv,nounits'))
@@ -472,6 +497,25 @@ try:
     
     def count_params(network, requires_grad=False):
         return sum(p.numel() for p in network.parameters() if not requires_grad or p.requires_grad)
+    
+    def report_memory():
+        numels = Counter()
+        for obj in gc.get_objects():
+            if torch.is_tensor(obj):
+                print(type(obj), obj.size())
+                numels[obj.device] += obj.numel()
+        print()
+        for device, numel in sorted(numels.items()):
+            print('%s: %s elements, %.3f MBs' % (str(device), numel, numel * 4 / 1024))
+    
+    def clear_gpu_memory():
+        gc.collect()
+        torch.cuda.empty_cache()
+        for obj in gc.get_objects():
+            if torch.is_tensor(obj):
+                obj.cpu()
+        gc.collect()
+        torch.cuda.empty_cache()
 
     def gelu(x):
         return 0.5 * x * (1 + torch.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
@@ -485,31 +529,45 @@ try:
             return input.view(input.size(0), -1)
 
     class Reshape(nn.Module):
-        def forward(self, input, *shape):
-            return input.reshape(*shape)
+        def __init__(self, *shape, split=None, merge=None):
+            super(Reshape, self).__init__()
+            self.shape = shape
+            self.split = split
+            self.merge = merge
+
+        def forward(self, input):
+            if self.split is None and self.merge is None:
+                return input.reshape(*self.shape)
+            in_shape = input.shape
     
     class Transpose(nn.Module):
-        def forward(self, input, dim0, dim1):
-            return input.transpose(dim0, dim1)
+        def __init__(self, dim0, dim1):
+            super(Transpose, self).__init__()
+            self.dim0 = dim0
+            self.dim1 = dim1
+
+        def forward(self, input):
+            return input.transpose(self.dim0, self.dim1)
     
     class Attention(nn.Module):
-        def __init__(self, n_io, n_kv, n_head=1, layer_norm=False):
+        def __init__(self, n_io, n_k, n_v=None, n_head=1, n_ctx=None, layer_norm=False):
             super(Attention, self).__init__()
-            self.n_kv = n_kv
+            self.n_k = n_k
+            self.n_v = n_v = n_v or n_k
             self.n_head = n_head
+            self.n_ctx = n_ctx
             self.layer_norm = layer_norm
             if layer_norm:
                 self.ln = nn.LayerNorm(n_io)
-            self.fc_qkv = nn.Linear(n_io, n_head * n_kv * 3)
-            self.fc_out = nn.Linear(n_head * n_kv, n_io)
+            self.fc_qkv = nn.Linear(n_io, n_head * (n_k * 2 + n_v))
+            self.fc_out = nn.Linear(n_head * n_v, n_io)
 
-        def merge_past(self, k, v, past_kv, qk_ignore):
-            past_k, past_v = past_kv
-            n_ctx, _ = qk_ignore.shape
-            past_ignore = torch.zeros((n_ctx, past_k.size(2)))
+        def merge_past(self, kv, past_kv, qk_ignore):
+            if past_kv is None:
+                return kv, qk_ignore
+            past_ignore = torch.zeros((qk_ignore.size(0), past_kv.size(2)))
             return (
-                torch.cat((past_k, k), dim=2),
-                torch.cat((past_v, v), dim=2),
+                torch.cat((past_kv, kv), dim=2),
                 torch.cat((past_ignore, qk_ignore), dim=1)
             )
         
@@ -521,33 +579,84 @@ try:
         def forward(self, input, past_kv=None):
             n_b, n_ctx, n_io = input.shape
             n_head = self.n_head
-            n_kv = self.n_kv
+            n_k, n_v = self.n_k, self.n_v
+            if self.layer_norm:
+                input = self.ln(input)
+            
+            q_kv = self.fc_qkv(input).reshape(n_b, n_ctx, n_head, -1).split([n_k, n_k + n_v], dim=-1)
+            q, kv = map(lambda x: x.transpose(1, 2), q_kv) # shape (n_b, n_head, n_ctx, n_kv)
+            
+            qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
+            kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)    
+
+            k, v = kv.split([n_k, n_v], dim=-1)
+            qk = torch.einsum('bhck,bhdk->bhcd', q, k) / np.sqrt(n_k)
+
+            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)            
+            attn_weights = self.attend(qk, qk_ignore)
+            qkv_out = torch.einsum('bhcd,bhdk->bchk', attn_weights, v)
+
+            out = self.fc_out(qkv_out.reshape(n_b, n_ctx, n_head * n_v))
+            return out, kv
+
+        def forward_all(self, input):
+            n_b, n_seq, n_io = input.shape
+            n_head = self.n_head
+            n_ctx = min(self.n_ctx or n_seq, n_seq)
+            n_k, n_v = self.n_k, self.n_v
             if self.layer_norm:
                 input = self.ln(input)
 
-            r_fn = lambda x: x.reshape(n_b, n_ctx, n_head, n_kv).transpose(1, 2)
-            q, k, v = map(r_fn, self.fc_qkv(input).split(n_head * n_kv, dim=-1))
-            qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
+            q_kv = self.fc_qkv(input).reshape(n_b, n_seq, n_head, -1).split([n_k, n_k + n_v], dim=-1)
+            qkv_outs = []
+            past_kv = None
+            for q, kv in zip(*map(lambda x: x.transpose(1, 2).split(n_ctx, dim=2), q_kv)):
+                # each of q, k, v is shape (n_b, n_head, n_ctx, n_kv)
+                qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
+                kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)
+                
+                k, v = kv.split([n_k, n_v], dim=-1)
+                qk = torch.einsum('bhsk,bhck->bhsc', q, k) / np.sqrt(n_k)
+                qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
+                attn_weights = self.attend(qk, qk_ignore)
+                
+                qkv_outs.append(torch.einsum('bhsc,bhcv->bshv', attn_weights, v))
+                past_kv = kv
+            qkv_out = torch.cat(qkv_outs, dim=1)
+            out = self.fc_out(qkv_out.reshape(n_b, n_seq, n_head * n_v))
+            return out, past_kv
 
-            # each is shape (n_b, n_head, n_ctx, n_kv)
-            if past_kv is not None:
-                k, v, qk_ignore = self.merge_past(k, v, past_kv, qk_ignore)
-            qk = torch.einsum('bhck,bhdk->bhcd', q, k) / np.sqrt(n_kv)
-            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
-            attn_weights = self.attend(qk, qk_ignore)
-            qkv = torch.einsum('bhcd,bhdk->bchk', attn_weights, v)
-
-            out = self.fc_out(qkv.reshape(n_b, n_ctx, n_head * n_kv))
-            return out, (k, v)
+    class CausalConv1d(nn.Module):
+        def __init__(self, in_depth, out_depth, kernel_size, dilation=1, stride=1, groups=1):
+            super(CausalConv1d, self).__init__()
+            self.padding = (kernel_size - 1) * dilation
+            self.conv = nn.Conv1d(in_depth, out_depth, kernel_size, stride=stride, padding=self.padding, dilation=dilation, groups=groups)
+        
+        def forward(self, x):
+            return self.conv(x)[:, :, :-self.padding] # to enforce causality, cut off the last padding outputs
 
 except ImportError:
     pass
 
 try:
     import visdom
+    
+    class Visdom(visdom.Visdom):
+        def line(self, Y, X=None, win=None, env=None, opts={}, update='append', name=None):
+            all_opts = Dict(title=win, showlegend=True).merge(opts)
+            if update == 'remove':
+                all_opts = None
+            super(Visdom, self).line(Y=Y, X=X, win=win, env=env, opts=all_opts, update=update, name=name)
 
-    def get_visdom(env='main', server=None, port=None):
-        return visdom.Visdom(server=server or os.environ['VISDOM_SERVER'], port=port or os.environ['VISDOM_PORT'], env=env)
+    _visdom_cache = {}
+    def get_visdom(env='main', server=None, port=None, raise_exceptions=True, **kwargs):
+        server = server or os.environ['VISDOM_SERVER']
+        port = port or os.environ['VISDOM_PORT']
+        key = (server, port, env or 'main')
+        if key not in _visdom_cache:
+            _visdom_cache[key] = Visdom(server=server, port=port, env=env, raise_exceptions=raise_exceptions, **kwargs)
+        return _visdom_cache[key]
+    
 except ImportError:
     pass
 
