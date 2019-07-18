@@ -164,6 +164,25 @@ def shorten(names, sep='_', new_sep='_'):
     new_levels = [*map(rename, levels)]
     return [new_sep.join(tup).rstrip(new_sep) for tup in zip(*new_levels)]
 
+t_ = {}
+def profile_start(*names):
+    for name in names or ['anon']:
+        t_[name] = [time()]
+
+def profile(obj, name='anon'):
+    t_[name].append(time())
+    return obj
+
+def profile_i(iterable, name='anon'):
+    for obj in iterable:
+        yield profile(obj, name=name)
+
+def profile_end(name='anon'):
+    times = t_.pop(name)
+    t0 = times[0]
+    times = [t - t0 for t in times[1:]]
+    return np.array(times)
+
 class Path(str):
     @classmethod
     def get_project(cls, path=None):
@@ -275,7 +294,7 @@ class Path(str):
     
     @property
     def _ext(self):
-        frags = self._name.split('.', 1)
+        frags = self._name.rsplit('.', 1)
         if len(frags) == 1:
             return ''
         return frags[1]
@@ -295,7 +314,7 @@ class Path(str):
         df.to_csv(self, float_format=float_format, **kwargs)
 
     def load_npy(self):
-        return np.load(self)
+        return np.load(self, allow_pickle=True)
     
     def save_npy(self, obj):
         np.save(self, obj)
@@ -497,8 +516,18 @@ try:
     
     def count_params(network, requires_grad=False):
         return sum(p.numel() for p in network.parameters() if not requires_grad or p.requires_grad)
-    
-    def report_memory():
+
+    def report_memory(device=None, max=False):
+        if device:
+            device = torch.device(device)
+            if max:
+                alloc = torch.cuda.max_memory_allocated(device=device)
+            else:
+                alloc = torch.cuda.memory_allocated(device=device)
+            alloc /=  1024 ** 2
+            print('%.3f MBs' % alloc)
+            return alloc
+
         numels = Counter()
         for obj in gc.get_objects():
             if torch.is_tensor(obj):
@@ -506,7 +535,7 @@ try:
                 numels[obj.device] += obj.numel()
         print()
         for device, numel in sorted(numels.items()):
-            print('%s: %s elements, %.3f MBs' % (str(device), numel, numel * 4 / 1024))
+            print('%s: %s elements, %.3f MBs' % (str(device), numel, numel * 4 / 1024 ** 2))
     
     def clear_gpu_memory():
         gc.collect()
@@ -634,6 +663,17 @@ try:
         
         def forward(self, x):
             return self.conv(x)[:, :, :-self.padding] # to enforce causality, cut off the last padding outputs
+
+    class CausalMaxPool1d(nn.Module):
+        def __init__(self, kernel_size, dilation=1, stride=1):
+            super(CausalMaxPool1d, self).__init__()
+            self.padding = (kernel_size - 1) * dilation
+            self.pool = nn.MaxPool1d(kernel_size, stride=stride, dilation=dilation)
+        
+        def forward(self, x):
+            x = F.pad(x, (self.padding, 0))
+            return self.pool(x) # to enforce causality, cut off the last padding outputs
+
 
 except ImportError:
     pass
