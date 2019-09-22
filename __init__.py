@@ -1,8 +1,9 @@
 from __future__ import absolute_import, print_function
 
-import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, gc
+import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, yaml, gc
 from datetime import datetime
 from time import time
+from fnmatch import fnmatch
 from glob import glob
 from tqdm import tqdm
 from collections import OrderedDict, defaultdict, Counter
@@ -19,7 +20,10 @@ else:
 def lrange(*args, **kwargs):
     return list(range(*args, **kwargs))
 
-class Dict(dict):
+class Dict(OrderedDict):
+    def __add__(self, d):
+        return Dict(**self).merge(d)
+
     def merge(self, *dicts):
         for d in dicts:
             self.update(d)
@@ -50,12 +54,16 @@ def save_json(path, dict_):
 def format_json(dict_):
     return json.dumps(dict_, indent=4, sort_keys=True)
 
-def load_text(path):
-    with open(path, 'r+') as f:
+def format_yaml(dict_):
+    dict_ = recurse(dict_, lambda x: x._ if type(x) is Path else dict(x) if type(x) is Dict else x)
+    return yaml.dump(dict_)
+
+def load_text(path, encoding='utf-8'):
+    with open(path, 'r', encoding=encoding) as f:
         return f.read()
 
 def save_text(path, string):
-    with open(path, 'w+') as f:
+    with open(path, 'w') as f:
         f.write(string)
 
 def load_pickle(path):
@@ -183,20 +191,27 @@ def profile_end(name='anon'):
     times = [t - t0 for t in times[1:]]
     return np.array(times)
 
+def debugger():
+    import ptvsd
+    ptvsd.enable_attach()
+    ptvsd.wait_for_attach()
+
+_log_path = None
+def logger(directory=None):
+    global _log_path
+    if directory and not _log_path:
+        from datetime import datetime
+        _log_path = Path(directory) / datetime.now().isoformat().replace(':', '_').rsplit('.')[0] + '.log'
+    return log
+
+def log(text):
+    print(text)
+    if _log_path:
+        with open(_log_path, 'a') as f:
+            f.write(text)
+            f.write('\n')
+
 class Path(str):
-    @classmethod
-    def get_project(cls, path=None):
-        cwd = Path(path or os.getcwd())
-        while cwd and cwd != '/':
-            proj_path = cwd / 'project.py'
-            if proj_path.exists():
-                break
-            cwd = cwd._up
-        else:
-            return None
-        project = import_module('project', str(proj_path))
-        return project.project
-    
     def __init__(self, path):
         pass
         
@@ -230,8 +245,7 @@ class Path(str):
             dir.recurse(dir_fn=dir_fn, file_fn=file_fn)
         
     def mk(self):
-        if not self.exists():
-            os.makedirs(self)
+        os.makedirs(self, exist_ok=True)
         return self
     
     def rm(self):
@@ -276,6 +290,23 @@ class Path(str):
     def rel(self, start=None):
         return Path(os.path.relpath(self, start=start))
     
+    def clone(self):
+        name = self._name
+        match = re.search('__([0-9]+)$', name)
+        if match is None:
+            base = self + '__'
+            i = 1
+        else:
+            initial = match.group(1)
+            base = self[:-len(initial)]
+            i = int(initial) + 1
+        while True:
+            path = Path(base + str(i))
+            if not path.exists():
+                return path
+            i += 1
+
+
     @property
     def _(self):
         return str(self)
@@ -286,7 +317,10 @@ class Path(str):
     
     @property
     def _up(self):
-        return Path(os.path.dirname(self))
+        path = os.path.dirname(self)
+        if path is '':
+            path = os.path.dirname(self._real)
+        return Path(path)
     
     @property
     def _name(self):
@@ -319,6 +353,15 @@ class Path(str):
     def save_npy(self, obj):
         np.save(self, obj)
     
+    def load_yaml(self):
+        with open(self, 'r') as f:
+            return yaml.safe_load(f)
+    
+    def save_yaml(self, obj):
+        obj = recurse(obj, lambda x: x._ if type(x) is Path else dict(x) if type(x) is Dict else x)
+        with open(self, 'w') as f:
+            yaml.dump(obj, f, default_flow_style=False, allow_unicode=True)
+    
     def load(self):
         return eval('self.load_%s' % self._ext)()
     
@@ -332,13 +375,18 @@ class Path(str):
         
 
 class Namespace(object):
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
+    def __init__(self, *args, **kwargs):
+        self.var(*args, **kwargs)
     
     def var(self, *args, **kwargs):
+        kvs = Dict()
         for a in args:
-            kwargs[a] = True
-        self.__dict__.update(kwargs)
+            if type(a) is str:
+                kvs[a] = True
+            else: # a is a dictionary
+                kvs.update(a)
+        kvs.update(kwargs)
+        self.__dict__.update(kvs)
         return self
     
     def unvar(self, *args):
@@ -348,6 +396,11 @@ class Namespace(object):
     
     def get(self, key, default=None):
         return self.__dict__.get(key, default)
+    
+    def setdefault(self, *args, **kwargs):
+        args = [a for a in args if a not in self.__dict__]
+        kwargs = {k: v for k, v in kwargs.items() if k not in self.__dict__}
+        return self.var(*args, **kwargs)
 
 
 ##### Functions for compute
@@ -386,7 +439,7 @@ except ImportError:
 
 def recurse(x, fn):
     T = type(x)
-    if T in [dict, OrderedDict]:
+    if T in [dict, OrderedDict, Dict]:
         return T((k, recurse(v, fn)) for k, v in x.items())
     elif T in [list, tuple]:
         return T(recurse(v, fn) for v in x)
@@ -400,6 +453,11 @@ def from_numpy(x):
             return np.asscalar(x)
         return x
     return recurse(x, helper)
+
+def smooth(y, box_pts):
+    box = np.ones(box_pts) / box_pts
+    y_smooth = np.convolve(y, box, mode='same')
+    return y_smooth
 
 def reindex(df, order=None, rename=None, level=[], axis=0, squeeze=True):
     assert axis in [0, 1]
@@ -508,6 +566,8 @@ try:
 
     def from_torch(t):
         def helper(t):
+            if type(t) != torch.Tensor:
+                return t
             x = t.detach().cpu().numpy()
             if x.size == 1 or np.isscalar(x):
                 return np.asscalar(x)
@@ -577,6 +637,14 @@ try:
 
         def forward(self, input):
             return input.transpose(self.dim0, self.dim1)
+
+    class Permute(nn.Module):
+        def __init__(self, *dims):
+            super(Permute, self).__init__()
+            self.dims = dims
+
+        def forward(self, input):
+            return input.permute(*self.dims)
     
     class Attention(nn.Module):
         def __init__(self, n_io, n_k, n_v=None, n_head=1, n_ctx=None, layer_norm=False):
@@ -659,10 +727,12 @@ try:
         def __init__(self, in_depth, out_depth, kernel_size, dilation=1, stride=1, groups=1):
             super(CausalConv1d, self).__init__()
             self.padding = (kernel_size - 1) * dilation
-            self.conv = nn.Conv1d(in_depth, out_depth, kernel_size, stride=stride, padding=self.padding, dilation=dilation, groups=groups)
+            self.conv = nn.Conv1d(in_depth, out_depth, kernel_size, stride=stride, dilation=dilation, groups=groups)
         
-        def forward(self, x):
-            return self.conv(x)[:, :, :-self.padding] # to enforce causality, cut off the last padding outputs
+        def forward(self, x, pad=True):
+            if pad:
+                x = F.pad(x, (self.padding, 0))
+            return self.conv(x)
 
     class CausalMaxPool1d(nn.Module):
         def __init__(self, kernel_size, dilation=1, stride=1):
@@ -670,13 +740,18 @@ try:
             self.padding = (kernel_size - 1) * dilation
             self.pool = nn.MaxPool1d(kernel_size, stride=stride, dilation=dilation)
         
-        def forward(self, x):
-            x = F.pad(x, (self.padding, 0))
-            return self.pool(x) # to enforce causality, cut off the last padding outputs
+        def forward(self, x, pad=True):
+            if pad:
+                x = F.pad(x, (self.padding, 0))
+            return self.pool(x)
 
 
 except ImportError:
     pass
+
+from .exp import Config
+
+# deprecated
 
 try:
     import visdom
@@ -697,10 +772,5 @@ try:
             _visdom_cache[key] = Visdom(server=server, port=port, env=env, raise_exceptions=raise_exceptions, **kwargs)
         return _visdom_cache[key]
     
-except ImportError:
-    pass
-
-try:
-    from e.src.config import Config
 except ImportError:
     pass

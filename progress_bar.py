@@ -18,7 +18,8 @@ class Progress(object):
     
     def close(self):
         self.counter.close()
-        active_counters.remove(self.counter)
+        if self.counter in active_counters:
+            active_counters.remove(self.counter)
         if len(active_counters) == 0:
             progress_manager.stop()
 
