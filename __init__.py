@@ -12,7 +12,7 @@ qq = q
 import warnings
 warnings.filterwarnings('ignore')
 
-if sys.version_info[0] < 3: 
+if sys.version_info[0] < 3:
     from StringIO import StringIO
 else:
     from io import StringIO
@@ -28,7 +28,7 @@ class Dict(OrderedDict):
         for d in dicts:
             self.update(d)
         return self
-    
+
     def filter(self, keys):
         try: # check for iterable
             keys = set(keys)
@@ -36,7 +36,7 @@ class Dict(OrderedDict):
         except TypeError: # function key
             f = keys
             return Dict((k, v) for k, v in self.items() if f(k, v))
-    
+
     def map(self, mapper):
         if callable(mapper): # function mapper
             return Dict((k, mapper(v)) for k, v in self.items())
@@ -102,7 +102,7 @@ def tmux_window(cmd, session='', window='', directory=None):
     if window:
         cmds.extend(['tmux', 'list-panes', '-t', '%s:%s' % (session, window)])
         cmds.append('||')
-    
+
     # else if session exists
     subcmds = ['tmux', 'has-session']
     flag(subcmds, '-t', session)
@@ -114,7 +114,7 @@ def tmux_window(cmd, session='', window='', directory=None):
     flag(subcmds, '-n', window)
     flag(subcmds, '-c', directory)
     subcmds.append("'%s'" % cmd)
-    
+
     cmds.append('(%s)' % ' '.join(subcmds))
     cmds.append('||')
 
@@ -214,16 +214,16 @@ def log(text):
 class Path(str):
     def __init__(self, path):
         pass
-        
+
     def __add__(self, subpath):
         return Path(str(self) + str(subpath))
-    
+
     def __truediv__(self, subpath):
         return Path(os.path.join(str(self), str(subpath)))
-    
+
     def __floordiv__(self, subpath):
         return (self / subpath)._
-    
+
     def ls(self, show_hidden=True, dir_only=False, file_only=False):
         subpaths = [Path(self / subpath) for subpath in os.listdir(self) if show_hidden or not subpath.startswith('.')]
         isdirs = [os.path.isdir(subpath) for subpath in subpaths]
@@ -234,7 +234,13 @@ class Path(str):
         if file_only:
             return files
         return subdirs, files
-    
+
+    def lsdirs(self, show_hidden=True):
+        return self.ls(show_hidden=show_hidden, dir_only=True)
+
+    def lsfiles(self, show_hidden=True):
+        return self.ls(show_hidden=show_hidden, file_only=True)
+
     def recurse(self, dir_fn=None, file_fn=None):
         if dir_fn is not None:
             dir_fn(self)
@@ -243,30 +249,30 @@ class Path(str):
             list(map(file_fn, files))
         for dir in dirs:
             dir.recurse(dir_fn=dir_fn, file_fn=file_fn)
-        
+
     def mk(self):
         os.makedirs(self, exist_ok=True)
         return self
-    
+
     def rm(self):
         if self.isfile() or self.islink():
             os.remove(self)
         elif self.isdir():
             shutil.rmtree(self)
         return self
-    
+
     def mv(self, dest):
         shutil.move(self, dest)
 
     def mv_from(self, src):
         shutil.move(src, self)
-    
+
     def cp(self, dest):
         shutil.copy(self, dest)
-    
+
     def cp_from(self, src):
         shutil.copy(src, self)
-    
+
     def link(self, target, force=False):
         if self.exists():
             if not force:
@@ -277,19 +283,19 @@ class Path(str):
 
     def exists(self):
         return os.path.exists(self)
-    
+
     def isfile(self):
         return os.path.isfile(self)
-    
+
     def isdir(self):
         return os.path.isdir(self)
 
     def islink(self):
         return os.path.islink(self)
-    
+
     def rel(self, start=None):
         return Path(os.path.relpath(self, start=start))
-    
+
     def clone(self):
         name = self._name
         match = re.search('__([0-9]+)$', name)
@@ -314,18 +320,18 @@ class Path(str):
     @property
     def _real(self):
         return Path(os.path.realpath(self))
-    
+
     @property
     def _up(self):
         path = os.path.dirname(self)
         if path is '':
             path = os.path.dirname(self._real)
         return Path(path)
-    
+
     @property
     def _name(self):
         return os.path.basename(self)
-    
+
     @property
     def _ext(self):
         frags = self._name.rsplit('.', 1)
@@ -349,22 +355,22 @@ class Path(str):
 
     def load_npy(self):
         return np.load(self, allow_pickle=True)
-    
+
     def save_npy(self, obj):
         np.save(self, obj)
-    
+
     def load_yaml(self):
         with open(self, 'r') as f:
             return yaml.safe_load(f)
-    
+
     def save_yaml(self, obj):
         obj = recurse(obj, lambda x: x._ if type(x) is Path else dict(x) if type(x) is Dict else x)
         with open(self, 'w') as f:
             yaml.dump(obj, f, default_flow_style=False, allow_unicode=True)
-    
+
     def load(self):
         return eval('self.load_%s' % self._ext)()
-    
+
     def save(self, obj):
         return eval('self.save_%s' % self._ext)(obj)
 
@@ -372,12 +378,12 @@ class Path(str):
         if self.isdir():
             return Path(wget(link, self))
         raise ValueError('Path %s needs to be a directory' % self)
-        
+
 
 class Namespace(object):
     def __init__(self, *args, **kwargs):
         self.var(*args, **kwargs)
-    
+
     def var(self, *args, **kwargs):
         kvs = Dict()
         for a in args:
@@ -388,15 +394,15 @@ class Namespace(object):
         kvs.update(kwargs)
         self.__dict__.update(kvs)
         return self
-    
+
     def unvar(self, *args):
         for a in args:
             self.__dict__.pop(a)
         return self
-    
+
     def get(self, key, default=None):
         return self.__dict__.get(key, default)
-    
+
     def setdefault(self, *args, **kwargs):
         args = [a for a in args if a not in self.__dict__]
         kwargs = {k: v for k, v in kwargs.items() if k not in self.__dict__}
@@ -424,7 +430,7 @@ try:
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-        
+
     def _sel(self, col, value):
         if type(value) == list:
             return self[self[col].isin(value)]
@@ -523,7 +529,7 @@ def get_gpu_info(ssh_fn=lambda x: x):
         devices = list(map(int, devices_str.split(',')))
         gpu_df = gpu_df.loc[devices]
         gpu_df.index = gpu_df.index.map({k: i for i, k in enumerate(devices)})
-    
+
     out_df = pd.DataFrame(index=gpu_df.index)
     out_df['memory_total'] = gpu_df['memory.total [MiB]']
     out_df['memory_used'] = gpu_df['memory.used [MiB]']
@@ -548,7 +554,7 @@ def get_process_gpu_info(pid=None, ssh_fn=lambda x: x):
 
 try:
     import torch
-    import torch.nn as nn    
+    import torch.nn as nn
     import torch.nn.functional as F
     import torch.optim as optim
     from torch.utils.data import Dataset, DataLoader
@@ -573,7 +579,7 @@ try:
                 return np.asscalar(x)
             return x
         return recurse(t, helper)
-    
+
     def count_params(network, requires_grad=False):
         return sum(p.numel() for p in network.parameters() if not requires_grad or p.requires_grad)
 
@@ -596,7 +602,7 @@ try:
         print()
         for device, numel in sorted(numels.items()):
             print('%s: %s elements, %.3f MBs' % (str(device), numel, numel * 4 / 1024 ** 2))
-    
+
     def clear_gpu_memory():
         gc.collect()
         torch.cuda.empty_cache()
@@ -628,7 +634,7 @@ try:
             if self.split is None and self.merge is None:
                 return input.reshape(*self.shape)
             in_shape = input.shape
-    
+
     class Transpose(nn.Module):
         def __init__(self, dim0, dim1):
             super(Transpose, self).__init__()
@@ -645,7 +651,7 @@ try:
 
         def forward(self, input):
             return input.permute(*self.dims)
-    
+
     class Attention(nn.Module):
         def __init__(self, n_io, n_k, n_v=None, n_head=1, n_ctx=None, layer_norm=False):
             super(Attention, self).__init__()
@@ -667,29 +673,29 @@ try:
                 torch.cat((past_kv, kv), dim=2),
                 torch.cat((past_ignore, qk_ignore), dim=1)
             )
-        
+
         def attend(self, qk, qk_ignore):
             qk.data.masked_fill_(qk_ignore, -np.inf)
             attn_weights = qk.softmax(dim=-1)
             return attn_weights
-        
+
         def forward(self, input, past_kv=None):
             n_b, n_ctx, n_io = input.shape
             n_head = self.n_head
             n_k, n_v = self.n_k, self.n_v
             if self.layer_norm:
                 input = self.ln(input)
-            
+
             q_kv = self.fc_qkv(input).reshape(n_b, n_ctx, n_head, -1).split([n_k, n_k + n_v], dim=-1)
             q, kv = map(lambda x: x.transpose(1, 2), q_kv) # shape (n_b, n_head, n_ctx, n_kv)
-            
+
             qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
-            kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)    
+            kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)
 
             k, v = kv.split([n_k, n_v], dim=-1)
             qk = torch.einsum('bhck,bhdk->bhcd', q, k) / np.sqrt(n_k)
 
-            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)            
+            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
             attn_weights = self.attend(qk, qk_ignore)
             qkv_out = torch.einsum('bhcd,bhdk->bchk', attn_weights, v)
 
@@ -711,12 +717,12 @@ try:
                 # each of q, k, v is shape (n_b, n_head, n_ctx, n_kv)
                 qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
                 kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)
-                
+
                 k, v = kv.split([n_k, n_v], dim=-1)
                 qk = torch.einsum('bhsk,bhck->bhsc', q, k) / np.sqrt(n_k)
                 qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
                 attn_weights = self.attend(qk, qk_ignore)
-                
+
                 qkv_outs.append(torch.einsum('bhsc,bhcv->bshv', attn_weights, v))
                 past_kv = kv
             qkv_out = torch.cat(qkv_outs, dim=1)
@@ -728,7 +734,7 @@ try:
             super(CausalConv1d, self).__init__()
             self.padding = (kernel_size - 1) * dilation
             self.conv = nn.Conv1d(in_depth, out_depth, kernel_size, stride=stride, dilation=dilation, groups=groups)
-        
+
         def forward(self, x, pad=True):
             if pad:
                 x = F.pad(x, (self.padding, 0))
@@ -739,7 +745,7 @@ try:
             super(CausalMaxPool1d, self).__init__()
             self.padding = (kernel_size - 1) * dilation
             self.pool = nn.MaxPool1d(kernel_size, stride=stride, dilation=dilation)
-        
+
         def forward(self, x, pad=True):
             if pad:
                 x = F.pad(x, (self.padding, 0))
@@ -755,7 +761,7 @@ from .exp import Config
 
 try:
     import visdom
-    
+
     class Visdom(visdom.Visdom):
         def line(self, Y, X=None, win=None, env=None, opts={}, update='append', name=None):
             all_opts = Dict(title=win, showlegend=True).merge(opts)
@@ -771,6 +777,6 @@ try:
         if key not in _visdom_cache:
             _visdom_cache[key] = Visdom(server=server, port=port, env=env, raise_exceptions=raise_exceptions, **kwargs)
         return _visdom_cache[key]
-    
+
 except ImportError:
     pass

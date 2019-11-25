@@ -1,4 +1,7 @@
-from apex import amp
+try:
+    from apex import amp
+except ImportError:
+    pass
 
 from u import *
 
