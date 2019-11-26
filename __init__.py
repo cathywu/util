@@ -148,6 +148,15 @@ def shell(cmd, wait=True, ignore_error=2):
     out, err = process.communicate()
     return out.decode(), err.decode() if err else None
 
+def git_state(dir='.'):
+    cwd = os.getcwd()
+    os.chdir(dir)
+    status = shell('git status')[0]
+    base_commit = shell('git rev-parse HEAD')[0]
+    diff = shell('git diff %s' % base_commit)[0]
+    os.chdir(cwd)
+    return base_commit, diff, status
+
 def attributes(obj):
     import inspect, pprint
     pprint.pprint(inspect.getmembers(obj, lambda a: not inspect.isroutine(a)))
@@ -212,7 +221,7 @@ def log(text):
             f.write('\n')
 
 class Path(str):
-    def __init__(self, path):
+    def __init__(self, path=''):
         pass
 
     def __add__(self, subpath):
@@ -240,6 +249,9 @@ class Path(str):
 
     def lsfiles(self, show_hidden=True):
         return self.ls(show_hidden=show_hidden, file_only=True)
+
+    def glob(self, glob_str):
+        return glob(self / glob_str)
 
     def recurse(self, dir_fn=None, file_fn=None):
         if dir_fn is not None:

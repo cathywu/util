@@ -55,13 +55,13 @@ class Config(Namespace):
     @property
     def path(self):
         return self.res / (type(self).__name__.lower() + '.yaml')
-    
+
     def load(self):
         if self.path.exists():
             for k, v in self.path.load().items():
                 setattr(self, k, v)
         return self
-    
+
     never_save = {'res', 'name', 'main', 'logger', 'distributed', 'parallel', 'device', 'steps', 'debug'}
     @property
     def attrs_save(self):
@@ -78,7 +78,7 @@ class Config(Namespace):
 
     def clone_(self):
         return self.cp_(self.res._real.clone())
-    
+
     def cp(self, path, *args, **kwargs):
         return self.cp_(path, *args, **kwargs).save()
 
@@ -99,16 +99,16 @@ class Config(Namespace):
         else:
             new_res = self.res._up / path
         return Config(new_res).var(**merged)
-    
+
     @classmethod
     def from_args(cls):
         import argparse
         parser = argparse.ArgumentParser(description='Model arguments')
         parser.add_argument('res', type=Path, help='Result directory')
         parser.add_argument('kwargs', nargs='*', help='Extra arguments that goes into the config')
-        
+
         args = parser.parse_args()
-        
+
         kwargs = {}
         for kv in args.kwargs:
             splits = kv.split('=')
@@ -138,7 +138,7 @@ class Config(Namespace):
             return configs
         config_map = {c: c.attrs_save for c in configs}
         return pd.DataFrame(config_map).T.fillna('')
-    
+
     @classmethod
     def clean(cls, *directories):
         configs = cls.load_all(*directories)
@@ -146,7 +146,7 @@ class Config(Namespace):
             if not (config.train_results.exists() or len(config.models.ls()[1]) > 0):
                 config.res.rm()
                 self.log('Removed %s' % config.res)
-    
+
     @main_only
     def log(self, text):
         logger(self.res if self.logger else None)(text)
@@ -192,7 +192,7 @@ class Config(Namespace):
             return
 
         self.log(str(self))
-        self.log('Network has %s parameters' % count_params(s.net))        
+        self.log('Network has %s parameters' % count_params(s.net))
 
         s.progress = None
         if self.main:
@@ -204,10 +204,10 @@ class Config(Namespace):
         step = s.step
         results = s.results
         step_result = s.step_result
-        
+
         if results is None:
             s.results = results = pd.DataFrame(columns=step_result.index, index=pd.Series(name='step'))
-        
+
         prev_time = 0
         if len(results):
             last_step = results.index[-1]
@@ -236,7 +236,7 @@ class Config(Namespace):
                 if 'time' in k:
                     v /= 60.0 # convert seconds to minutes
                 s.writer.add_scalar(k, v, global_step=step, walltime=tot_time)
-            
+
         if step % self.step_save == 0 or time() - s.last_save_time >= self.time_save:
             self.save_train_results(results)
             self.save_state(step, self.get_state(s.net, s.opt, step), link_best=False)
@@ -251,13 +251,13 @@ class Config(Namespace):
             ]))
             if s.progress: next(s.progress)
         sys.stdout.flush()
-    
+
     def on_train_end(self, s):
         step = s.step
         if s.results is not None:
             self.save_train_results(s.results)
             s.results = None
-        
+
         if s.last_record_state:
             if not self.model_save(s.last_record_step).exists():
                 save_path = self.save_state(s.last_record_step, s.last_record_state, link_best=True)
@@ -269,7 +269,7 @@ class Config(Namespace):
 
         if s.progress: s.progress.close()
         if s.writer: s.writer.close()
-        
+
         self.set_training(False)
 
         import signal
@@ -277,7 +277,7 @@ class Config(Namespace):
 
     def train(self, steps=1000000, cd=True, gpu=True, env_gpu=True, opt='O0', log=True):
         cd = ('cd %s\n' % self.res) if cd else ''
-                
+
         cmd = []
         if env_gpu is False or env_gpu is None:
             cmd.append('CUDA_VISIBLE_DEVICES=')
@@ -328,7 +328,7 @@ class Config(Namespace):
             torch.cuda.set_device(self.local_rank)
             torch.distributed.init_process_group(backend='nccl', init_method='env://')
             self.main = self.local_rank == 0
-            
+
         net.to(self.device)
         if train:
             # configure mixed precision
@@ -340,14 +340,14 @@ class Config(Namespace):
             net = apex.parallel.DistributedDataParallel(net)
         elif self.parallel:
             net = nn.DataParallel(net)
-        
+
         if train:
             net.train()
             return net, opt, step
         else:
             net.eval()
             return net, step
-    
+
     def load_model(self, step='best', train=False):
         '''
         step can be 'best', 'max', an integer, or None
@@ -360,7 +360,7 @@ class Config(Namespace):
     @property
     def train_results(self):
         return self.res / 'train_results.csv'
-    
+
     def load_train_results(self):
         if self.train_results.exists():
             return pd.read_csv(self.train_results, index_col=0)
@@ -369,12 +369,12 @@ class Config(Namespace):
     @main_only
     def save_train_results(self, results):
         results.to_csv(self.train_results, float_format='%.6g')
-    
+
 
     @property
     def stopped_early(self):
         return self.res / 'stopped_early'
-    
+
     @main_only
     def set_stopped_early(self):
         self.stopped_early.save_txt('')
@@ -383,7 +383,7 @@ class Config(Namespace):
     @property
     def training(self):
         return self.res / 'is_training'
-    
+
     @main_only
     def set_training(self, is_training):
         if is_training:
@@ -391,14 +391,14 @@ class Config(Namespace):
         else:
             self.training.rm()
 
-    
+
     @property
     def models(self):
         return (self.res / 'models').mk()
-    
+
     def model_save(self, step):
         return self.models / ('model-%s.pth' % step)
-    
+
     def model_step(self, path):
         m = re.match('.+/model-(\d+)\.pth', path)
         if m:
@@ -411,7 +411,7 @@ class Config(Namespace):
     @main_only
     def link_model_best(self, model_save):
         self.model_best.rm().link(Path(model_save).rel(self.models))
-    
+
     def get_saved_model_steps(self):
         _, save_paths = self.models.ls()
         if len(save_paths) == 0:
@@ -445,7 +445,7 @@ class Config(Namespace):
         if 'amp' in state and self.opt_level != 'O0':
             amp.load_state_dict(state['amp'])
         return state['step']
-    
+
     @main_only
     def get_state(self, net, opt, step):
         try:
