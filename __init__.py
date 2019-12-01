@@ -146,7 +146,7 @@ def shell(cmd, wait=True, ignore_error=2):
     if not wait:
         return process
     out, err = process.communicate()
-    return out.decode(), err.decode() if err else None
+    return out.decode().rstrip('\n'), err.decode().rstrip('\n') if err else None
 
 def git_state(dir='.'):
     cwd = os.getcwd()
@@ -251,7 +251,7 @@ class Path(str):
         return self.ls(show_hidden=show_hidden, file_only=True)
 
     def glob(self, glob_str):
-        return glob(self / glob_str)
+        return [Path(p) for p in glob(self / glob_str)]
 
     def recurse(self, dir_fn=None, file_fn=None):
         if dir_fn is not None:
@@ -331,13 +331,13 @@ class Path(str):
 
     @property
     def _real(self):
-        return Path(os.path.realpath(self))
+        return Path(os.path.realpath(os.path.expanduser(self)))
 
     @property
     def _up(self):
-        path = os.path.dirname(self)
+        path = os.path.dirname(self.rstrip('/'))
         if path is '':
-            path = os.path.dirname(self._real)
+            path = os.path.dirname(self._real.rstrip('/'))
         return Path(path)
 
     @property
