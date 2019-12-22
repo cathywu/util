@@ -24,9 +24,10 @@ class Dict(OrderedDict):
     def __add__(self, d):
         return Dict(**self).merge(d)
 
-    def merge(self, *dicts):
+    def merge(self, *dicts, **kwargs):
         for d in dicts:
             self.update(d)
+        self.update(kwargs)
         return self
 
     def filter(self, keys):

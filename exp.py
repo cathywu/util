@@ -43,7 +43,8 @@ class Config(Namespace):
             logger=True,
             device='cuda',
             debug=False,
-            opt_level='O0'
+            opt_level='O0',
+            disable_amp=False
         )
 
     def __repr__(self):
@@ -330,9 +331,9 @@ class Config(Namespace):
             self.main = self.local_rank == 0
 
         net.to(self.device)
-        if train:
+        if train and not self.disable_amp:
             # configure mixed precision
-            net, opt = amp.initialize(net, opt, opt_level=self.opt_level, loss_scale=self.get('loss_scale'), verbosity=int(self.opt_level != 'O0'))
+            net, opt = amp.initialize(net, opt, opt_level=self.opt_level, loss_scale=self.get('loss_scale'), verbosity=0 if self.opt_level == 'O0' else 1)
         step = self.set_state(net, opt=opt, step=step)
 
         if self.distributed:
@@ -452,7 +453,12 @@ class Config(Namespace):
             net_dict = net.module.state_dict()
         except AttributeError:
             net_dict = net.state_dict()
-        return to_torch(dict(step=step, net=net_dict, opt=opt.state_dict(), amp=amp.state_dict()), device='cpu')
+        state = dict(step=step, net=net_dict, opt=opt.state_dict())
+        try:
+            state['amp'] = amp.state_dict()
+        except:
+            pass
+        return to_torch(state, device='cpu')
 
     def load_state(self, step='max', path=None):
         '''
