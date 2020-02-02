@@ -442,7 +442,7 @@ try:
         import matplotlib
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-
+    plt_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     def _sel(self, col, value):
         if type(value) == list:
