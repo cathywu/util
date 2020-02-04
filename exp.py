@@ -37,7 +37,7 @@ class Config(Namespace):
     def __init__(self, res, *args, **kwargs):
         self.res = Path(res)._real
         super(Config, self).__init__(*args, **kwargs)
-        self.setdefault(
+        self.setdefaults(
             name=self.res._real._name,
             main=True,
             logger=True,
@@ -48,7 +48,7 @@ class Config(Namespace):
         )
 
     def __repr__(self):
-        return format_yaml(vars(self))
+        return format_yaml(dict(self))
 
     def __hash__(self):
         return hash(repr(self))
@@ -157,7 +157,7 @@ class Config(Namespace):
         step = s.step
         s.step_max = self.steps
 
-        self.setdefault(
+        self.setdefaults(
             step_save=np.inf,
             time_save=np.inf,
             patience=np.inf,
@@ -318,8 +318,8 @@ class Config(Namespace):
         devices = os.environ.get('CUDA_VISIBLE_DEVICES')
         self.n_gpus = 0 if self.device == 'cpu' else 1 if self.device.startswith('cuda:') else len(get_gpu_info()) if devices is None else len(devices.split(','))
         can_parallel = self.n_gpus > 1
-        self.setdefault(distributed=can_parallel) # use distributeddataparallel
-        self.setdefault(parallel=can_parallel and not self.distributed) # use dataparallel
+        self.setdefaults(distributed=can_parallel) # use distributeddataparallel
+        self.setdefaults(parallel=can_parallel and not self.distributed) # use dataparallel
         self.local_rank = 0
         self.world_size = 1 # number of processes
         if self.distributed:

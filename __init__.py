@@ -12,7 +12,8 @@ qq = q
 import warnings
 warnings.filterwarnings('ignore')
 
-if sys.version_info[0] < 3:
+version = sys.version_info
+if version[0] < 3:
     from StringIO import StringIO
 else:
     from io import StringIO
@@ -20,7 +21,7 @@ else:
 def lrange(*args, **kwargs):
     return list(range(*args, **kwargs))
 
-class Dict(OrderedDict):
+class Dict(dict if version.major == 3 and version.minor >= 6 else OrderedDict):
     def __add__(self, d):
         return Dict(**self).merge(d)
 
@@ -43,6 +44,17 @@ class Dict(OrderedDict):
             return Dict((k, mapper(v)) for k, v in self.items())
         else: # dictionary mapper
             return Dict((k, mapper[v]) for k, v in self.items())
+
+def parse_dot(d):
+    ks = [(k, v) for k, v in d.items() if '.' in k]
+    for k, v in ks:
+        del d[k]
+        curr = d
+        *fronts, back = k.split('.')
+        for k_ in fronts:
+            curr = curr.setdefault(k_, {})
+        curr[back] = v
+    return d
 
 def load_json(path):
     with open(path, 'r+') as f:
@@ -393,7 +405,7 @@ class Path(str):
         raise ValueError('Path %s needs to be a directory' % self)
 
 
-class Namespace(object):
+class Namespace(Dict):
     def __init__(self, *args, **kwargs):
         self.var(*args, **kwargs)
 
@@ -405,22 +417,27 @@ class Namespace(object):
             else: # a is a dictionary
                 kvs.update(a)
         kvs.update(kwargs)
-        self.__dict__.update(kvs)
+        self.update(kvs)
         return self
 
     def unvar(self, *args):
         for a in args:
-            self.__dict__.pop(a)
+            self.pop(a)
         return self
 
-    def get(self, key, default=None):
-        return self.__dict__.get(key, default)
-
-    def setdefault(self, *args, **kwargs):
-        args = [a for a in args if a not in self.__dict__]
-        kwargs = {k: v for k, v in kwargs.items() if k not in self.__dict__}
+    def setdefaults(self, *args, **kwargs):
+        args = [a for a in args if a not in self]
+        kwargs = {k: v for k, v in kwargs.items() if k not in self}
         return self.var(*args, **kwargs)
 
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError as e:
+            raise AttributeError(e)
+
+    def __setattr__(self, key, value):
+        self[key] = value
 
 ##### Functions for compute
 
