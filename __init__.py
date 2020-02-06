@@ -6,6 +6,7 @@ from time import time
 from fnmatch import fnmatch
 from glob import glob
 from tqdm import tqdm
+from copy import copy, deepcopy
 from collections import OrderedDict, defaultdict, Counter
 import q
 qq = q
@@ -434,7 +435,7 @@ class Namespace(Dict):
         try:
             return self[key]
         except KeyError as e:
-            raise AttributeError(e)
+            raise AttributeError(key)
 
     def __setattr__(self, key, value):
         self[key] = value
