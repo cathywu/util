@@ -60,13 +60,13 @@ class Config(Namespace):
     def load(self):
         if self.path.exists():
             for k, v in self.path.load().items():
-                setattr(self, k, v)
+                self[k] = v
         return self
 
     never_save = {'res', 'name', 'main', 'logger', 'distributed', 'parallel', 'device', 'steps', 'debug'}
     @property
     def attrs_save(self):
-        return {k: v for k, v in vars(self).items() if k not in self.never_save}
+        return {k: v for k, v in self.items() if k not in self.never_save}
 
     def save(self, force=False):
         if force or not self.path.exists():
