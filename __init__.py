@@ -105,6 +105,11 @@ def extract(input_path, output_path=None):
     else:
         raise RuntimeError('Don\'t know file extension for ' + input_path)
 
+def rand_string(length):
+    import string
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(length))
+
 def tmux_window(cmd, session='', window='', directory=None):
     def flag(cmds, flag, value):
         if value:
@@ -219,12 +224,15 @@ def debugger():
     ptvsd.enable_attach()
     ptvsd.wait_for_attach()
 
+def get_time_log_path():
+    return datetime.now().isoformat().replace(':', '_').rsplit('.')[0] + '.log'
+
 _log_path = None
 def logger(directory=None):
     global _log_path
     if directory and not _log_path:
         from datetime import datetime
-        _log_path = Path(directory) / datetime.now().isoformat().replace(':', '_').rsplit('.')[0] + '.log'
+        _log_path = Path(directory) / get_time_log_path()
     return log
 
 def log(text):
