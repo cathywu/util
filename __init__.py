@@ -242,6 +242,54 @@ def log(text):
             f.write(text)
             f.write('\n')
 
+def installed(pkg):
+    out, err = shell('dpkg -l %s' % pkg)
+    if err and err.startswith('dpkg-query: no packages found matching'):
+        return False
+    return True
+
+def install(pkgs, root):
+    root = Path(root)
+    old_cwd = os.getcwd()
+    self_installed = set()
+    os.chdir(root)
+    while pkgs:
+        pkg = pkgs.pop()
+        print('Processing %s' % pkg)
+        if installed(pkg) or pkg in self_installed:
+            continue
+        out, err = shell('apt-cache depends %s' % pkg)
+        deps = []
+        for x in out.split('\n'):
+            x = x.lstrip()
+            if x.startswith('Depends:'):
+                splits = x.split(' ')
+                assert len(splits) == 2
+                dep = splits[1]
+                if not (dep in self_installed or installed(dep)):
+                    deps.append(dep)
+        print('Found needed dependencies %s for %s' % (deps, pkg))
+        pkgs.extend(deps)
+        tmp = Path('tmp')
+        shell('mkdir tmp && cd tmp && apt download %s' % pkg)
+        for deb in tmp.glob('*.deb'):
+            shell('dpkg -x %s %s' % (deb, root))
+            print('Installing %s with %s' % (pkg, deb))
+            self_installed.add(pkg)
+        tmp.rm()
+    lib = Path('usr/lib')
+    real_root = Path('/')
+    for x in lib, lib / 'x86_64-linux-gnu':
+        brokens = x.lslinks(exist=False)
+        for broken in brokens:
+            real = real_root / broken._up / os.readlink(broken)
+            if real.exists():
+                broken.link(real, force=True)
+                print('Fixing broken link to be %s -> %s' % (broken, real))
+            else:
+                print('Could not fix broken link %s' % broken)
+    os.chdir(old_cwd)
+
 class Path(str):
     def __init__(self, path=''):
         pass
@@ -271,6 +319,11 @@ class Path(str):
 
     def lsfiles(self, show_hidden=True):
         return self.ls(show_hidden=show_hidden, file_only=True)
+
+    def lslinks(self, show_hidden=True, exist=None):
+        dirs, files = self.ls(show_hidden=show_hidden)
+        return [x for x in dirs + files if x.islink() and (
+            exist is None or not (exist ^ x.exists()))]
 
     def glob(self, glob_str):
         return [Path(p) for p in glob(self / glob_str)]
@@ -308,7 +361,7 @@ class Path(str):
         shutil.copy(src, self)
 
     def link(self, target, force=False):
-        if self.exists():
+        if self.lexists():
             if not force:
                 return
             else:
@@ -317,6 +370,9 @@ class Path(str):
 
     def exists(self):
         return os.path.exists(self)
+
+    def lexists(self):
+        return os.path.lexists(self)
 
     def isfile(self):
         return os.path.isfile(self)
