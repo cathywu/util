@@ -148,6 +148,15 @@ class Config(Namespace):
                 config.res.rm()
                 self.log('Removed %s' % config.res)
 
+    def try_save_commit(self):
+        base_commit, diff, status = git_state()
+
+        save_dir = (self.res / 'commit').mk()
+        (save_dir / 'hash.txt').save(base_commit)
+        (save_dir / 'diff.txt').save(diff)
+        (save_dir / 'status.txt').save(status)
+        return self
+
     @main_only
     def log(self, text):
         logger(self.res if self.logger else None)(text)
@@ -172,9 +181,6 @@ class Config(Namespace):
             results=self.load_train_results()
         )
 
-        if self.main and self.training.exists():
-            self.log('Quitting because another training is found')
-            exit()
         self.set_training(True)
         import signal
         def handler(signum, frame):
@@ -388,10 +394,12 @@ class Config(Namespace):
     @main_only
     def set_training(self, is_training):
         if is_training:
+            if self.main and self.training.exists():
+                self.log('Quitting because another training is found')
+                exit()
             self.training.save_txt('')
         else:
             self.training.rm()
-
 
     @property
     def models(self):

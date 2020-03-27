@@ -167,8 +167,9 @@ def shell(cmd, wait=True, ignore_error=2):
     out, err = process.communicate()
     return out.decode().rstrip('\n'), err.decode().rstrip('\n') if err else None
 
-def git_state(dir='.'):
+def git_state(dir=None):
     cwd = os.getcwd()
+    dir = dir or shell('git rev-parse --show-toplevel')[0]
     os.chdir(dir)
     status = shell('git status')[0]
     base_commit = shell('git rev-parse HEAD')[0]
@@ -654,23 +655,23 @@ try:
     import torch.optim as optim
     from torch.utils.data import Dataset, DataLoader
 
-    def to_torch(x, device='cuda'):
+    def to_torch(x, device='cuda' if torch.cuda.is_available() else 'cpu', **kwargs):
         def helper(x):
             if x is None:
                 return None
             elif type(x) == torch.Tensor:
-                return x.to(device)
+                return x.to(device=device, **kwargs)
             elif type(x) in [str, bool, int, float]:
                 return x
-            return torch.from_numpy(x).to(device)
+            return torch.from_numpy(x).to(device=device, **kwargs)
         return recurse(x, helper)
 
-    def from_torch(t):
+    def from_torch(t, force_scalar=False):
         def helper(t):
             if type(t) != torch.Tensor:
                 return t
             x = t.detach().cpu().numpy()
-            if x.size == 1 or np.isscalar(x):
+            if force_scalar and (x.size == 1 or np.isscalar(x)):
                 return np.asscalar(x)
             return x
         return recurse(t, helper)
