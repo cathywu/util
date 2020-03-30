@@ -327,7 +327,7 @@ class Path(str):
             exist is None or not (exist ^ x.exists()))]
 
     def glob(self, glob_str):
-        return [Path(p) for p in glob(self / glob_str)]
+        return [Path(p) for p in glob(self / glob_str, recursive=True)]
 
     def recurse(self, dir_fn=None, file_fn=None):
         if dir_fn is not None:
