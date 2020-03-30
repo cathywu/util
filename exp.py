@@ -41,7 +41,7 @@ class Config(Namespace):
             name=self.res._real._name,
             main=True,
             logger=True,
-            device='cuda',
+            device='cuda' if torch.cuda.is_available() else 'cpu',
             debug=False,
             opt_level='O0',
             disable_amp=False
@@ -491,6 +491,8 @@ class Config(Namespace):
     @main_only
     def save_state(self, step, state, clean=True, link_best=False):
         save_path = self.model_save(step)
+        if save_path.exists():
+            return save_path
         torch.save(state, save_path)
         self.log('Saved model %s at step %s' % (save_path, step))
         if clean and self.get('max_save'):

@@ -167,6 +167,12 @@ def shell(cmd, wait=True, ignore_error=2):
     out, err = process.communicate()
     return out.decode().rstrip('\n'), err.decode().rstrip('\n') if err else None
 
+def terminal_height():
+    return int(shell('tput lines')[0])
+
+def terminal_width():
+    return int(shell('tput cols')[0])
+
 def git_state(dir=None):
     cwd = os.getcwd()
     dir = dir or shell('git rev-parse --show-toplevel')[0]
