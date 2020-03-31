@@ -36,7 +36,9 @@ def main_only(method):
 class Config(Namespace):
     def __init__(self, res, *args, **kwargs):
         self.res = Path(res)._real
-        super(Config, self).__init__(*args, **kwargs)
+        super(Config, self).__init__()
+        self.load()
+        self.var(*args, **kwargs)
         self.setdefaults(
             name=self.res._real._name,
             main=True,
@@ -123,7 +125,7 @@ class Config(Namespace):
                     pass
             kwargs[splits[0]] = v
 
-        return cls(args.res).load().var(**kwargs).save()
+        return cls(args.res, **kwargs).save()
 
     @classmethod
     def load_all(cls, *directories, df=False, kwargs={}):

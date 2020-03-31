@@ -298,7 +298,7 @@ def install(pkgs, root):
     os.chdir(old_cwd)
 
 class Path(str):
-    def __init__(self, path=''):
+    def __init__(self, path='.'):
         pass
 
     def __add__(self, subpath):
