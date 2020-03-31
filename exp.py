@@ -55,7 +55,7 @@ class Config(Namespace):
 
     @property
     def path(self):
-        return self.res / (type(self).__name__.lower() + '.yaml')
+        return self.res / 'config.yaml'
 
     def load(self):
         if self.path.exists():
