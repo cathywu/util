@@ -158,14 +158,16 @@ def ssh(user, host, cmd, key=None, password=None, terminal=False):
     cmds.append('"%s"' % cmd)
     return ' '.join(cmds)
 
-def shell(cmd, wait=True, ignore_error=2):
+def shell(cmd, wait=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+    stdout = stdout or subprocess.DEVNULL
+    stderr = stderr or subprocess.DEVNULL
     if type(cmd) != str:
         cmd = ' '.join(cmd)
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(cmd, shell=True, stdout=stdout, stderr=stderr)
     if not wait:
         return process
     out, err = process.communicate()
-    return out.decode().rstrip('\n'), err.decode().rstrip('\n') if err else None
+    return out.decode().rstrip('\n') if out else None, err.decode().rstrip('\n') if err else None
 
 def terminal_height():
     return int(shell('tput lines')[0])
@@ -183,9 +185,13 @@ def git_state(dir=None):
     os.chdir(cwd)
     return base_commit, diff, status
 
-def attributes(obj):
-    import inspect, pprint
-    pprint.pprint(inspect.getmembers(obj, lambda a: not inspect.isroutine(a)))
+def attributes(obj, print=True):
+    import inspect
+    attrs = inspect.getmembers(obj, lambda a: not inspect.isroutine(a))
+    if print:
+        from pprint import pprint
+        pprint(attrs)
+    return attrs
 
 def import_module(module_name, module_path):
     import imp
@@ -444,6 +450,10 @@ class Path(str):
     load_p = load_pickle
     save_p = save_pickle
 
+    def save_bytes(self, bytes):
+        with open(self, 'wb') as f:
+            f.write(bytes)
+
     def load_csv(self, index_col=0, **kwargs):
         return pd.read_csv(self, index_col=index_col, **kwargs)
 
@@ -464,6 +474,20 @@ class Path(str):
         obj = recurse(obj, lambda x: x._ if type(x) is Path else dict(x) if type(x) is Dict else x)
         with open(self, 'w') as f:
             yaml.dump(obj, f, default_flow_style=False, allow_unicode=True)
+
+    def load_pdf(self):
+        """
+        return: PdfReader object.
+        Can use index and slice obj.pages for the pages, then call Path.save_pdf to save
+        """
+        from pdfrw import PdfReader
+        return PdfReader(self)
+
+    def save_pdf(self, pages):
+        from pdfrw import PdfWriter
+        writer = PdfWriter()
+        writer.addpages(pages)
+        writer.write(self)
 
     def load(self):
         return eval('self.load_%s' % self._ext)()
@@ -506,7 +530,7 @@ class Namespace(Dict):
         try:
             return self[key]
         except KeyError as e:
-            raise AttributeError(key)
+            self.__getattribute__(key)
 
     def __setattr__(self, key, value):
         self[key] = value
@@ -545,6 +569,9 @@ try:
 except ImportError:
     pass
 
+def flatten(x):
+    return [z for y in x for z in y]
+
 def recurse(x, fn):
     T = type(x)
     if T in [dict, OrderedDict, Dict]:
@@ -566,6 +593,9 @@ def smooth(y, box_pts):
     box = np.ones(box_pts) / box_pts
     y_smooth = np.convolve(y, box, mode='same')
     return y_smooth
+
+def normalize(x, eps=1e-8):
+    return (x - x.mean()) / x.std()
 
 def reindex(df, order=None, rename=None, level=[], axis=0, squeeze=True):
     assert axis in [0, 1]
@@ -650,7 +680,6 @@ def get_process_gpu_info(pid=None, ssh_fn=lambda x: x):
     if pid == -1:
         pid = os.getpid()
     return gpu_df.loc[pid]
-
 
 ##### torch functions
 
