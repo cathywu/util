@@ -110,6 +110,10 @@ def rand_string(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
 
+nexti = nextk = lambda iterable: next(iter(iterable))
+nextv = lambda dict: next(iter(dict.values()))
+nextkv = lambda dict: next(iter(dict.items()))
+
 def tmux_window(cmd, session='', window='', directory=None):
     def flag(cmds, flag, value):
         if value:
@@ -167,7 +171,7 @@ def shell(cmd, wait=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
     if not wait:
         return process
     out, err = process.communicate()
-    return out.decode().rstrip('\n') if out else None, err.decode().rstrip('\n') if err else None
+    return out.decode().rstrip('\n') if out else '', err.decode().rstrip('\n') if err else ''
 
 def terminal_height():
     return int(shell('tput lines')[0])
@@ -557,6 +561,10 @@ try:
     import matplotlib.pyplot as plt
     plt_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
+    arrayf = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.float32)
+    arrayl = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.long)
+    arrayb = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.bool)
+
     def _sel(self, col, value):
         if type(value) == list:
             return self[self[col].isin(value)]
@@ -574,7 +582,7 @@ def flatten(x):
 
 def recurse(x, fn):
     T = type(x)
-    if T in [dict, OrderedDict, Dict]:
+    if isinstance(x, dict):
         return T((k, recurse(v, fn)) for k, v in x.items())
     elif T in [list, tuple]:
         return T(recurse(v, fn) for v in x)
@@ -694,9 +702,9 @@ try:
         def helper(x):
             if x is None:
                 return None
-            elif type(x) == torch.Tensor:
+            elif isinstance(x, torch.Tensor):
                 return x.to(device=device, **kwargs)
-            elif type(x) in [str, bool, int, float]:
+            elif np.isscalar(x):
                 return x
             return torch.from_numpy(x).to(device=device, **kwargs)
         return recurse(x, helper)
@@ -743,17 +751,6 @@ try:
         gc.collect()
         torch.cuda.empty_cache()
 
-    def gelu(x):
-        return 0.5 * x * (1 + torch.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
-
-    class GeLU(nn.Module):
-        def forward(self, input):
-            return gelu(input)
-
-    class Flatten(nn.Module):
-        def forward(self, input):
-            return input.view(input.size(0), -1)
-
     class Reshape(nn.Module):
         def __init__(self, *shape, split=None, merge=None):
             super(Reshape, self).__init__()
@@ -783,83 +780,6 @@ try:
         def forward(self, input):
             return input.permute(*self.dims)
 
-    class Attention(nn.Module):
-        def __init__(self, n_io, n_k, n_v=None, n_head=1, n_ctx=None, layer_norm=False):
-            super(Attention, self).__init__()
-            self.n_k = n_k
-            self.n_v = n_v = n_v or n_k
-            self.n_head = n_head
-            self.n_ctx = n_ctx
-            self.layer_norm = layer_norm
-            if layer_norm:
-                self.ln = nn.LayerNorm(n_io)
-            self.fc_qkv = nn.Linear(n_io, n_head * (n_k * 2 + n_v))
-            self.fc_out = nn.Linear(n_head * n_v, n_io)
-
-        def merge_past(self, kv, past_kv, qk_ignore):
-            if past_kv is None:
-                return kv, qk_ignore
-            past_ignore = torch.zeros((qk_ignore.size(0), past_kv.size(2)))
-            return (
-                torch.cat((past_kv, kv), dim=2),
-                torch.cat((past_ignore, qk_ignore), dim=1)
-            )
-
-        def attend(self, qk, qk_ignore):
-            qk.data.masked_fill_(qk_ignore, -np.inf)
-            attn_weights = qk.softmax(dim=-1)
-            return attn_weights
-
-        def forward(self, input, past_kv=None):
-            n_b, n_ctx, n_io = input.shape
-            n_head = self.n_head
-            n_k, n_v = self.n_k, self.n_v
-            if self.layer_norm:
-                input = self.ln(input)
-
-            q_kv = self.fc_qkv(input).reshape(n_b, n_ctx, n_head, -1).split([n_k, n_k + n_v], dim=-1)
-            q, kv = map(lambda x: x.transpose(1, 2), q_kv) # shape (n_b, n_head, n_ctx, n_kv)
-
-            qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
-            kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)
-
-            k, v = kv.split([n_k, n_v], dim=-1)
-            qk = torch.einsum('bhck,bhdk->bhcd', q, k) / np.sqrt(n_k)
-
-            qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
-            attn_weights = self.attend(qk, qk_ignore)
-            qkv_out = torch.einsum('bhcd,bhdk->bchk', attn_weights, v)
-
-            out = self.fc_out(qkv_out.reshape(n_b, n_ctx, n_head * n_v))
-            return out, kv
-
-        def forward_all(self, input):
-            n_b, n_seq, n_io = input.shape
-            n_head = self.n_head
-            n_ctx = min(self.n_ctx or n_seq, n_seq)
-            n_k, n_v = self.n_k, self.n_v
-            if self.layer_norm:
-                input = self.ln(input)
-
-            q_kv = self.fc_qkv(input).reshape(n_b, n_seq, n_head, -1).split([n_k, n_k + n_v], dim=-1)
-            qkv_outs = []
-            past_kv = None
-            for q, kv in zip(*map(lambda x: x.transpose(1, 2).split(n_ctx, dim=2), q_kv)):
-                # each of q, k, v is shape (n_b, n_head, n_ctx, n_kv)
-                qk_ignore = torch.triu(torch.ones((n_ctx, n_ctx)), diagonal=1)
-                kv, qk_ignore = self.merge_past(kv, past_kv, qk_ignore)
-
-                k, v = kv.split([n_k, n_v], dim=-1)
-                qk = torch.einsum('bhsk,bhck->bhsc', q, k) / np.sqrt(n_k)
-                qk_ignore = qk_ignore.byte().reshape(1, 1, *qk_ignore.shape).to(qk.device)
-                attn_weights = self.attend(qk, qk_ignore)
-
-                qkv_outs.append(torch.einsum('bhsc,bhcv->bshv', attn_weights, v))
-                past_kv = kv
-            qkv_out = torch.cat(qkv_outs, dim=1)
-            out = self.fc_out(qkv_out.reshape(n_b, n_seq, n_head * n_v))
-            return out, past_kv
-
     class CausalConv1d(nn.Module):
         def __init__(self, in_depth, out_depth, kernel_size, dilation=1, stride=1, groups=1):
             super(CausalConv1d, self).__init__()
@@ -881,7 +801,6 @@ try:
             if pad:
                 x = F.pad(x, (self.padding, 0))
             return self.pool(x)
-
 
 except ImportError:
     pass
