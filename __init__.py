@@ -584,14 +584,14 @@ def recurse(x, fn):
     T = type(x)
     if isinstance(x, dict):
         return T((k, recurse(v, fn)) for k, v in x.items())
-    elif T in [list, tuple]:
+    elif isinstance(x, (list, tuple)):
         return T(recurse(v, fn) for v in x)
     return fn(x)
 
 def from_numpy(x):
     def helper(x):
         if type(x).__module__ == np.__name__:
-            if type(x) == np.ndarray:
+            if isinstance(x, np.ndarray):
                 return recurse(list(x), helper)
             return np.asscalar(x)
         return x
@@ -711,7 +711,7 @@ try:
 
     def from_torch(t, force_scalar=False):
         def helper(t):
-            if type(t) != torch.Tensor:
+            if not isinstance(t, torch.Tensor):
                 return t
             x = t.detach().cpu().numpy()
             if force_scalar and (x.size == 1 or np.isscalar(x)):
