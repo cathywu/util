@@ -1,0 +1,7 @@
+import sys
+import torch
+
+model = torch.load(sys.argv[1])
+model.pop('opt')
+model.pop('step')
+torch.save(model, sys.argv[2])

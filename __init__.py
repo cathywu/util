@@ -308,7 +308,7 @@ def install(pkgs, root):
     os.chdir(old_cwd)
 
 class Path(str):
-    def __init__(self, path='.'):
+    def __init__(self, path):
         pass
 
     def __add__(self, subpath):
@@ -479,6 +479,12 @@ class Path(str):
         with open(self, 'w') as f:
             yaml.dump(obj, f, default_flow_style=False, allow_unicode=True)
 
+    def load_pth(self):
+        return torch.load(self)
+
+    def save_pth(self, obj):
+        torch.save(obj, self)
+
     def load_pdf(self):
         """
         return: PdfReader object.
@@ -564,6 +570,7 @@ try:
     arrayf = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.float32)
     arrayl = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.long)
     arrayb = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.bool)
+    arrayo = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=object)
 
     def _sel(self, col, value):
         if type(value) == list:

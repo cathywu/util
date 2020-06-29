@@ -1,0 +1,22 @@
+import argparse
+from u import Path, itertools
+parser = argparse.ArgumentParser(description='Remove all in current directory except')
+parser.add_argument('globs', nargs='*', help='File paths or globs')
+args = parser.parse_args()
+
+here = Path('.')
+
+keep_files = set()
+for g in args.globs:
+    keep_files |= set(here.glob(g))
+
+if len(keep_files) == 0:
+    print('Found no files to keep, continue? (yes/n)')
+    ans = input('> ')
+    if ans != 'yes':
+        exit()
+
+for p in itertools.chain(*here.ls()):
+    if p not in keep_files:
+        print('Removing', p)
+        p.rm()

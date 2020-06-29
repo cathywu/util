@@ -397,8 +397,10 @@ class Config(Namespace):
     def set_training(self, is_training):
         if is_training:
             if self.main and self.training.exists():
-                self.log('Quitting because another training is found')
-                exit()
+                self.log('Another training is found, continue (yes/n)?')
+                ans = input('> ')
+                if ans != 'yes':
+                    exit()
             self.training.save_txt('')
         else:
             self.training.rm()
@@ -452,10 +454,13 @@ class Config(Namespace):
             state['net'] = OrderedDict(('module.' + k, v) for k, v in state['net'].items())
         net.load_state_dict(state['net'])
         if opt:
-            opt.load_state_dict(state['opt'])
+            if 'opt' in state:
+                opt.load_state_dict(state['opt'])
+            else:
+                self.log('No state for optimizer to load')
         if 'amp' in state and self.opt_level != 'O0':
             amp.load_state_dict(state['amp'])
-        return state['step']
+        return state.get('step', 0)
 
     @main_only
     def get_state(self, net, opt, step):
