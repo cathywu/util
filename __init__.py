@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function
 
 import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, yaml, gc
+from itertools import chain, groupby, ifilter, islice, product, permutations, combinations
 from datetime import datetime
 from time import time
 from fnmatch import fnmatch
@@ -12,6 +13,8 @@ import q
 qq = q
 import warnings
 warnings.filterwarnings('ignore')
+
+from . import flags
 
 version = sys.version_info
 if version[0] < 3:
@@ -554,35 +557,39 @@ except NameError:
     using_ipython = False
 
 try:
-    import numpy as np
-    import pandas as pd
+    if flags.numpy:
+        import numpy as np
 
-    import scipy.stats
-    import scipy as sp
-    from scipy.stats import pearsonr as pearson, spearmanr as spearman, kendalltau
+    if flags.pandas:
+        import pandas as pd
+        def _sel(self, col, value):
+            if type(value) == list:
+                return self[self[col].isin(value)]
+            return self[self[col] == value]
+        pd.DataFrame.sel = _sel
 
-    if not using_ipython:
-        import matplotlib
-        matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    plt_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    if flags.scipy:
+        import scipy.stats
+        import scipy as sp
+        from scipy.stats import pearsonr as pearson, spearmanr as spearman, kendalltau
+
+    if flags.matplotlib:
+        if not using_ipython:
+            import matplotlib
+            matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        plt_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     arrayf = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.float32)
     arrayl = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.long)
     arrayb = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=np.bool)
     arrayo = lambda *args, **kwargs: np.array(*args, **kwargs, dtype=object)
 
-    def _sel(self, col, value):
-        if type(value) == list:
-            return self[self[col].isin(value)]
-        return self[self[col] == value]
-    pd.DataFrame.sel = _sel
 except ImportError:
     pass
-try:
+
+if flags.sklearn:
     from sklearn.metrics import roc_auc_score as auroc, average_precision_score as auprc, roc_curve as roc, precision_recall_curve as prc, accuracy_score as accuracy
-except ImportError:
-    pass
 
 def flatten(x):
     return [z for y in x for z in y]
@@ -699,11 +706,12 @@ def get_process_gpu_info(pid=None, ssh_fn=lambda x: x):
 ##### torch functions
 
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    import torch.optim as optim
-    from torch.utils.data import Dataset, DataLoader
+    if flags.torch:
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
+        import torch.optim as optim
+        from torch.utils.data import Dataset, DataLoader
 
     def to_torch(x, device='cuda' if torch.cuda.is_available() else 'cpu', **kwargs):
         def helper(x):
@@ -816,7 +824,7 @@ from .exp import Config
 
 # deprecated
 
-try:
+if flags.visdom:
     import visdom
 
     class Visdom(visdom.Visdom):
@@ -834,6 +842,3 @@ try:
         if key not in _visdom_cache:
             _visdom_cache[key] = Visdom(server=server, port=port, env=env, raise_exceptions=raise_exceptions, **kwargs)
         return _visdom_cache[key]
-
-except ImportError:
-    pass

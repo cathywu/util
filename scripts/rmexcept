@@ -1,4 +1,6 @@
 import argparse
+import u.flags as flags
+flags.none()
 from u import Path, itertools
 parser = argparse.ArgumentParser(description='Remove all in current directory except')
 parser.add_argument('globs', nargs='*', help='File paths or globs')

@@ -4,4 +4,8 @@ import torch
 model = torch.load(sys.argv[1])
 model.pop('opt')
 model.pop('step')
-torch.save(model, sys.argv[2])
+try:
+    output = sys.argv[2]
+except IndexError:
+    output = sys.argv[1]
+torch.save(model, outputs)
