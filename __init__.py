@@ -1,7 +1,7 @@
 from __future__ import absolute_import, print_function
 
 import subprocess, sys, os, re, tempfile, zipfile, gzip, io, shutil, string, random, itertools, pickle, json, yaml, gc
-from itertools import chain, groupby, ifilter, islice, product, permutations, combinations
+from itertools import chain, groupby, islice, product, permutations, combinations
 from datetime import datetime
 from time import time
 from fnmatch import fnmatch
