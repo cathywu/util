@@ -403,6 +403,9 @@ class Path(str):
     def islink(self):
         return os.path.islink(self)
 
+    def chdir(self):
+        os.chdir(self)
+
     def rel(self, start=None):
         return Path(os.path.relpath(self, start=start))
 
@@ -618,6 +621,21 @@ def smooth(y, box_pts):
 
 def normalize(x, eps=1e-8):
     return (x - x.mean()) / x.std()
+
+def inverse_map(arr):
+    inv_map = np.zeros(len(arr))
+    inv_map[arr] = np.arange(len(arr))
+    return inv_map
+
+def sorted_segment_maps(segments):
+    sorted_segment_idxs = np.argsort(segments)
+    starts = np.cumsum(segments) - segments
+    sorted_starts = starts[sorted_segment_idxs]
+    sorted_segments = segments[sorted_segment_idxs]
+
+    idxs = np.array([i for s, length in zip(sorted_starts, sorted_segments) for i in range(s, s + length)])
+    sorted_uniques, blocks = zip(*((seg, sum(segs)) for seg, segs in groupby(sorted_segments)))
+    return idxs, inverse_map(idxs), sorted_uniques, blocks
 
 def reindex(df, order=None, rename=None, level=[], axis=0, squeeze=True):
     assert axis in [0, 1]
