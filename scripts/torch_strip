@@ -8,4 +8,4 @@ try:
     output = sys.argv[2]
 except IndexError:
     output = sys.argv[1]
-torch.save(model, outputs)
+torch.save(model, output)
