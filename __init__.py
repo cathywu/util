@@ -628,14 +628,16 @@ def inverse_map(arr):
     return inv_map
 
 def sorted_segment_maps(segments):
-    sorted_segment_idxs = np.argsort(segments)
+    r = Namespace()
+    r.segment_idxs = np.argsort(segments)
     starts = np.cumsum(segments) - segments
-    sorted_starts = starts[sorted_segment_idxs]
-    sorted_segments = segments[sorted_segment_idxs]
+    starts = starts[r.segment_idxs]
+    r.segments = segments[r.segment_idxs]
 
-    idxs = np.array([i for s, length in zip(sorted_starts, sorted_segments) for i in range(s, s + length)])
-    sorted_uniques, blocks = zip(*((seg, sum(segs)) for seg, segs in groupby(sorted_segments)))
-    return idxs, inverse_map(idxs), sorted_uniques, blocks
+    r.unit_idxs = np.array([i for s, length in zip(starts, r.segments) for i in range(s, s + length)])
+    r.unit_idxs_r = inverse_map(r.unit_idxs)
+    r.segment_uniques, r.segment_blocks, r.segment_counts = zip(*((seg, sum(segs), len(list(segs))) for seg, segs in groupby(r.segments)))
+    return r
 
 def reindex(df, order=None, rename=None, level=[], axis=0, squeeze=True):
     assert axis in [0, 1]
