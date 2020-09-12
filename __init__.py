@@ -25,6 +25,9 @@ else:
 def lrange(*args, **kwargs):
     return list(range(*args, **kwargs))
 
+def lchain(*args):
+    return list(chain(*args))
+
 class Dict(dict if version.major == 3 and version.minor >= 6 else OrderedDict):
     def __add__(self, d):
         return Dict(**self).merge(d)
